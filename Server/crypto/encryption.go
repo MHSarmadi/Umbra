@@ -199,20 +199,22 @@ func MACE_Encrypt_AEAD(key, data []byte, context string, difficulty uint16, dete
 	h.Write(cipher)
 	h.Write(tag[16:])
 	h.Digest().Read(tag)
+	tag = tag[:16]
 	return
 }
 
 func MACE_Decrypt_AEAD(key, cipher, salt, tag []byte, context string, difficulty uint16) (raw []byte, valid bool, err error) {
-	if len(cipher)%64 != 0 || len(cipher) == 0 {
+	length := len(cipher)
+	if length%64 != 0 || length == 0 {
 		return nil, false, errors.New("invalid input length - not correctly padded")
 	}
-	expectedTag := make([]byte, len(cipher)+2) // also used to temp-store ciphered data // the latest 2 bytes is used to store difficulty in BigEndian
-	binary.BigEndian.PutUint16(expectedTag[len(cipher):], difficulty)
-	copy(expectedTag, cipher)
+	expectedTag := make([]byte, length+2) // also used to temp-store ciphered data // the latest 2 bytes is used to store difficulty in BigEndian
+	binary.BigEndian.PutUint16(expectedTag[length:], difficulty)
+	copy(expectedTag[:length], cipher)
 	raw, h, err := internal_MACE_Decrypt(key, cipher, salt, "@AEAD-"+context, difficulty)
 	h.Reset()
-	h.Write(expectedTag[:len(cipher)])
-	h.Write(expectedTag[len(cipher):])
+	h.Write(expectedTag[:length])
+	h.Write(expectedTag[length:])
 	h.Digest().Read(expectedTag[:16])
 	valid = subtle.ConstantTimeCompare(tag, expectedTag[:16]) == 1
 	return
