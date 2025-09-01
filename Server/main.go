@@ -38,4 +38,9 @@ func main() {
 		fmt.Println("INVALID!!!")
 	}
 	fmt.Println("Length:", len(r))
+
+	fmt.Println()
+	fmt.Println()
+	fmt.Println()
+
 }
