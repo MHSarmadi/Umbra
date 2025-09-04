@@ -47,69 +47,92 @@ import (
 	"github.com/zeebo/blake3"
 )
 
-func coreEncrypt(hasher *blake3.Hasher, src, roundChunkBuf, latestChunk, digest []byte, rounds uint16, chunkSize byte) {
-	var (
-		chunk uint32
-		i     byte
-	)
-	for round := range rounds {
-		binary.BigEndian.PutUint16(roundChunkBuf[:2], round)
-		copy(latestChunk, src[len(src)-int(chunkSize):])
-		for chunk = uint32(len(src)/int(chunkSize) - 1); chunk > 0; chunk-- {
-			binary.BigEndian.PutUint32(roundChunkBuf[2:6], chunk)
-			hasher.Reset()
-			if chunk >= 2 {
-				hasher.Write(src[int(chunkSize)*int(chunk-2) : int(chunkSize)*int(chunk-1)])
-			} else {
-				hasher.Write(latestChunk)
-			}
-			hasher.Write(roundChunkBuf[:6])
-			hasher.Digest().Read(digest)
-			for i = range chunkSize {
-				src[int(i)+int(chunkSize)*int(chunk)] = digest[i] ^ src[int(i)+int(chunkSize)*int(chunk-1)]
-			}
-		}
-		copy(src[:chunkSize], latestChunk)
+func clear(b []byte) {
+	for i := range b {
+		b[i] = 0
 	}
 }
 
-func coreDecrypt(hasher *blake3.Hasher, src, roundChunkBuf, firstChunk, digest []byte, rounds uint16, chunkSize byte) {
+func coreEncrypt(hasher *blake3.Hasher, mutSrc []byte, rounds uint16, chunkSize byte) {
 	var (
-		chunk uint32
-		i     byte
+		chunks              = uint32(len(mutSrc)/int(chunkSize) - 1)
+		latestChunkPosition = len(mutSrc) - int(chunkSize)
+		chunk               uint32
+		i                   byte
+		roundChunkBuf       [6]byte
+		latestChunk         [64]byte
+		digest              [64]byte
 	)
-	for round := rounds - 1; round < rounds; round-- {
-		binary.BigEndian.PutUint16(roundChunkBuf[:2], round)
-		copy(firstChunk, src[:chunkSize])
-		for chunk = uint32(0); chunk < uint32(len(src)/int(chunkSize))-1; chunk++ {
-			binary.BigEndian.PutUint32(roundChunkBuf[2:6], chunk+1)
+	defer clear(digest[:])
+	for round := range rounds {
+		binary.BigEndian.PutUint16(roundChunkBuf[:], round)
+		copy(latestChunk[:chunkSize], mutSrc[latestChunkPosition:])
+		for chunk = chunks; chunk > 0; chunk-- {
+			thisChunk := int(chunkSize) * int(chunk)
+			prevChunk := thisChunk - int(chunkSize)
+			binary.BigEndian.PutUint32(roundChunkBuf[2:], chunk)
 			hasher.Reset()
-			if chunk >= 1 {
-				hasher.Write(src[int(chunkSize)*int(chunk-1) : int(chunkSize)*int(chunk)])
+			if chunk >= 2 {
+				hasher.Write(mutSrc[prevChunk-int(chunkSize) : prevChunk])
 			} else {
-				hasher.Write(firstChunk)
+				hasher.Write(latestChunk[:chunkSize])
 			}
-			hasher.Write(roundChunkBuf[:6])
-			hasher.Digest().Read(digest)
+			hasher.Write(roundChunkBuf[:])
+			hasher.Digest().Read(digest[:chunkSize])
 			for i = range chunkSize {
-				src[int(i)+int(chunkSize)*int(chunk)] = digest[i] ^ src[int(i)+int(chunkSize)*int(chunk+1)]
+				mutSrc[thisChunk+int(i)] = digest[i] ^ mutSrc[prevChunk+int(i)]
 			}
 		}
-		copy(src[len(src)-int(chunkSize):], firstChunk)
+		copy(mutSrc[:chunkSize], latestChunk[:chunkSize])
+	}
+}
+
+func coreDecrypt(hasher *blake3.Hasher, mutSrc []byte, rounds uint16, chunkSize byte) {
+	var (
+		chunks              = uint32(len(mutSrc)/int(chunkSize)) - 1
+		latestChunkPosition = len(mutSrc) - int(chunkSize)
+		chunk               uint32
+		i                   byte
+		roundChunkBuf       [6]byte
+		firstChunk          [64]byte
+		digest              [64]byte
+	)
+	defer clear(digest[:])
+	for round := rounds - 1; round < rounds; round-- {
+		binary.BigEndian.PutUint16(roundChunkBuf[:], round)
+		copy(firstChunk[:chunkSize], mutSrc[:chunkSize])
+		for chunk = range chunks {
+			thisChunk := int(chunkSize) * int(chunk)
+			nextChunk := thisChunk + int(chunkSize)
+			binary.BigEndian.PutUint32(roundChunkBuf[2:], chunk+1)
+			hasher.Reset()
+			if chunk >= 1 {
+				hasher.Write(mutSrc[thisChunk-int(chunkSize) : thisChunk])
+			} else {
+				hasher.Write(firstChunk[:chunkSize])
+			}
+			hasher.Write(roundChunkBuf[:])
+			hasher.Digest().Read(digest[:chunkSize])
+			for i = range chunkSize {
+				mutSrc[thisChunk+int(i)] = digest[i] ^ mutSrc[nextChunk+int(i)]
+			}
+		}
+		copy(mutSrc[latestChunkPosition:], firstChunk[:chunkSize])
 	}
 }
 
 func internal_MACE_Encrypt(key, data []byte, context string, difficulty uint16, deterministic bool) (cipher, salt []byte, h *blake3.Hasher) {
-	var chunkSize byte
+	var (
+		chunkSize = byte(64)
+		safeKey   [32]byte
+		saltBuf   [12]byte
+	)
+	defer clear(safeKey[:])
 	cipher = pkcs7Pad(data, 64)
 	if len(cipher) == 64 {
 		chunkSize = 32
-	} else {
-		chunkSize = 64
 	}
-	buffer := make([]byte, 50+2*chunkSize)
-	safeKey := buffer[0:32]
-	salt = buffer[38+2*chunkSize : 50+2*chunkSize]
+	salt = saltBuf[:]
 	if !deterministic {
 		if _, err := rand.Read(salt); err != nil {
 			panic("crypto/rand failure: " + err.Error())
@@ -118,48 +141,42 @@ func internal_MACE_Encrypt(key, data []byte, context string, difficulty uint16, 
 	h = blake3.NewDeriveKey("@UMBRAv0.0.0-@STDMACE-@MACEv1.0.0-" + context)
 	h.Write(key)
 	h.Write(salt)
-	h.Digest().Read(safeKey)
-	h, err := blake3.NewKeyed(safeKey)
+	h.Digest().Read(safeKey[:])
+	h, err := blake3.NewKeyed(safeKey[:])
 	if err != nil {
 		panic("blake3.NewKeyed failed: " + err.Error())
 	}
 
 	coreEncrypt(
-		h,                                   // hasher
-		cipher,                              // src
-		buffer[32:38],                       // roundChunkBuf
-		buffer[38:38+chunkSize],             // latestChunk
-		buffer[38+chunkSize:38+2*chunkSize], // digest
-		2*difficulty+3,                      // rounds
-		chunkSize,                           // chunkSize
+		h,              // hasher
+		cipher,         // src
+		2*difficulty+3, // rounds
+		chunkSize,      // chunkSize
 	)
 	return
 }
 
-func internal_MACE_Decrypt(key, cipher, salt []byte, context string, difficulty uint16) (raw []byte, h *blake3.Hasher, err error) {
-	var chunkSize byte
-	if len(cipher) == 64 {
+func internal_MACE_Decrypt(key, mutCipher, salt []byte, context string, difficulty uint16) (raw []byte, h *blake3.Hasher, err error) {
+	var (
+		chunkSize = byte(64)
+		safeKey   [32]byte
+	)
+	defer clear(safeKey[:])
+	if len(mutCipher) == 64 {
 		chunkSize = 32
-	} else {
-		chunkSize = 64
 	}
-	buffer := make([]byte, 38+2*chunkSize)
-	safeKey := buffer[0:32]
 	h = blake3.NewDeriveKey("@UMBRAv0.0.0-@STDMACE-@MACEv1.0.0-" + context)
 	h.Write(key)
 	h.Write(salt)
-	h.Digest().Read(safeKey)
-	h, _ = blake3.NewKeyed(safeKey)
+	h.Digest().Read(safeKey[:])
+	h, _ = blake3.NewKeyed(safeKey[:])
 	coreDecrypt(
-		h,                                   // hasher
-		cipher,                              // src
-		buffer[32:38],                       // roundChunkBuf
-		buffer[38:38+chunkSize],             // firstChunk
-		buffer[38+chunkSize:38+2*chunkSize], // digest
-		2*difficulty+3,                      // rounds
-		chunkSize,                           // chunkSize
+		h,              // hasher
+		mutCipher,      // src
+		2*difficulty+3, // rounds
+		chunkSize,      // chunkSize
 	)
-	raw, err = pkcs7Unpad(cipher, 64)
+	raw, err = pkcs7Unpad(mutCipher, 64)
 	return
 }
 
@@ -168,11 +185,11 @@ func MACE_Encrypt(key, data []byte, context string, difficulty uint16, determini
 	return
 }
 
-func MACE_Decrypt(key, cipher, salt []byte, context string, difficulty uint16) (raw []byte, err error) {
-	if len(cipher)%64 != 0 || len(cipher) == 0 {
+func MACE_Decrypt(key, mutCipher, salt []byte, context string, difficulty uint16) (raw []byte, err error) {
+	if len(mutCipher)%64 != 0 || len(mutCipher) == 0 {
 		return nil, errors.New("invalid input length - not correctly padded")
 	}
-	raw, _, err = internal_MACE_Decrypt(key, cipher, salt, context, difficulty)
+	raw, _, err = internal_MACE_Decrypt(key, mutCipher, salt, context, difficulty)
 	return
 }
 
@@ -182,55 +199,64 @@ func MACE_Encrypt_MIXIN(key, data, mixin []byte, context string, difficulty uint
 	return
 }
 
-func MACE_Decrypt_MIXIN(key, cipher, mixin, salt []byte, context string, difficulty uint16) (raw []byte, err error) {
-	if len(cipher)%64 != 0 || len(cipher) == 0 {
+func MACE_Decrypt_MIXIN(key, mutCipher, mixin, salt []byte, context string, difficulty uint16) (raw []byte, err error) {
+	if len(mutCipher)%64 != 0 || len(mutCipher) == 0 {
 		return nil, errors.New("invalid input length - not correctly padded")
 	}
 	mixin_hash := blake3.Sum512(mixin)
-	raw, _, err = internal_MACE_Decrypt(append(key, mixin_hash[:]...), cipher, salt, "@MIXIN-"+context, difficulty)
+	raw, _, err = internal_MACE_Decrypt(append(key, mixin_hash[:]...), mutCipher, salt, "@MIXIN-"+context, difficulty)
 	return
 }
 
 func MACE_Encrypt_AEAD(key, data []byte, context string, difficulty uint16, deterministic bool) (cipher, salt, tag []byte) {
-	tag = make([]byte, 16+2) // the latest 2 bytes is used to store difficulty in BigEndian
-	binary.BigEndian.PutUint16(tag[16:], difficulty)
+	var (
+		tagBuf        [16]byte
+		difficultyBuf [2]byte
+	)
+	defer clear(tagBuf[:])
+	binary.BigEndian.PutUint16(difficultyBuf[:], difficulty)
 	cipher, salt, h := internal_MACE_Encrypt(key, data, "@AEAD-"+context, difficulty, deterministic)
 	h.Reset()
 	h.Write(cipher)
-	h.Write(tag[16:])
-	h.Digest().Read(tag)
-	tag = tag[:16]
+	h.Write(difficultyBuf[:])
+	h.Digest().Read(tagBuf[:])
+	tag = append([]byte(nil), tagBuf[:]...)
 	return
 }
 
 func MACE_Decrypt_AEAD(key, cipher, salt, tag []byte, context string, difficulty uint16) (raw []byte, valid bool, err error) {
-	length := len(cipher)
-	if length%64 != 0 || length == 0 {
+	if len(cipher)%64 != 0 || len(cipher) == 0 {
 		return nil, false, errors.New("invalid input length - not correctly padded")
 	}
-	expectedTag := make([]byte, length+2) // also used to temp-store ciphered data // the latest 2 bytes is used to store difficulty in BigEndian
-	binary.BigEndian.PutUint16(expectedTag[length:], difficulty)
-	copy(expectedTag[:length], cipher)
-	raw, h, err := internal_MACE_Decrypt(key, cipher, salt, "@AEAD-"+context, difficulty)
+	var (
+		difficultyBuf [2]byte
+		expectedTag   [16]byte
+	)
+	binary.BigEndian.PutUint16(difficultyBuf[:], difficulty)
+	raw, h, err := internal_MACE_Decrypt(key, append([]byte(nil), cipher...), salt, "@AEAD-"+context, difficulty)
 	h.Reset()
-	h.Write(expectedTag[:length])
-	h.Write(expectedTag[length:])
-	h.Digest().Read(expectedTag[:16])
-	valid = subtle.ConstantTimeCompare(tag, expectedTag[:16]) == 1
+	h.Write(cipher)
+	h.Write(difficultyBuf[:])
+	h.Digest().Read(expectedTag[:])
+	valid = subtle.ConstantTimeCompare(tag, expectedTag[:]) == 1
 	return
 }
 
 func MACE_Encrypt_MIXIN_AEAD(key, data, mixin []byte, context string, difficulty uint16, deterministic bool) (cipher, salt, tag []byte) {
-	tag = make([]byte, 16+2) // the latest 2 bytes is used to store difficulty in BigEndian
-	binary.BigEndian.PutUint16(tag[16:], difficulty)
+	var (
+		tagBuf        [16]byte
+		difficultyBuf [2]byte
+	)
+	defer clear(tagBuf[:])
+	binary.BigEndian.PutUint16(difficultyBuf[:], difficulty)
 	mixin_hash := blake3.Sum512(mixin)
 	cipher, salt, h := internal_MACE_Encrypt(append(key, mixin_hash[:]...), data, "@MIXIN-@AEAD-"+context, difficulty, deterministic)
 	h.Reset()
 	h.Write(cipher)
-	h.Write(tag[16:])
+	h.Write(difficultyBuf[:])
 	h.Write(mixin)
-	h.Digest().Read(tag[:16])
-	tag = tag[:16]
+	h.Digest().Read(tagBuf[:])
+	tag = append([]byte(nil), tagBuf[:]...)
 	return
 }
 
@@ -238,17 +264,19 @@ func MACE_Decrypt_MIXIN_AEAD(key, cipher, mixin, salt, tag []byte, context strin
 	if len(cipher)%64 != 0 || len(cipher) == 0 {
 		return nil, false, errors.New("invalid input length - not correctly padded")
 	}
-	expectedTag := make([]byte, len(cipher)+2) // also used to temp-store ciphered data // the latest 2 bytes is used to store difficulty in BigEndian
-	binary.BigEndian.PutUint16(expectedTag[len(cipher):], difficulty)
+	var (
+		difficultyBuf [2]byte
+		expectedTag   [16]byte
+	)
+	binary.BigEndian.PutUint16(difficultyBuf[:], difficulty)
 	mixin_hash := blake3.Sum512(mixin)
-	copy(expectedTag[:len(cipher)], cipher)
-	raw, h, err := internal_MACE_Decrypt(append(key, mixin_hash[:]...), cipher, salt, "@MIXIN-@AEAD-"+context, difficulty)
+	raw, h, err := internal_MACE_Decrypt(append(key, mixin_hash[:]...), append([]byte(nil), cipher...), salt, "@MIXIN-@AEAD-"+context, difficulty)
 	h.Reset()
-	h.Write(expectedTag[:len(cipher)])
-	h.Write(expectedTag[len(cipher):])
+	h.Write(cipher)
+	h.Write(difficultyBuf[:])
 	h.Write(mixin)
-	h.Digest().Read(expectedTag[:16])
-	valid = subtle.ConstantTimeCompare(tag, expectedTag[:16]) == 1
+	h.Digest().Read(expectedTag[:])
+	valid = subtle.ConstantTimeCompare(tag, expectedTag[:]) == 1
 	return
 }
 
