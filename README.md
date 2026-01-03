@@ -1,3 +1,3 @@
-# Find Documentations at /Documentation directoory.
+# Find Documentations at /Documentation directory.
 
 No overview yet.
