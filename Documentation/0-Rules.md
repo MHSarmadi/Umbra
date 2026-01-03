@@ -1,7 +1,7 @@
 # Doc - GROUND RULES
 This document lists basic rules of **Umbra**'s development (*Now only v1*)
 
-> Scope: This document applies only to **v1**. Features like algorithm selection, blockchain integration, and multi-platform UI are deferred to later versions.
+> Scope: This document applies to **v1** only. Features like algorithm selection, blockchain integration, and multi-platform UI are deferred to later versions.
 
 - Platform:
 	> I'm sure I will use Go programming language for both **Client** and **Server** side.
