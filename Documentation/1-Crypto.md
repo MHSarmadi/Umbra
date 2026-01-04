@@ -22,3 +22,9 @@ This document lists and explains crypto tools that are implemented for **Umbra**
 	>	- MIXIN+AEAD: `MACE_<Encrypt/Decrypt>_MIXIN_AEAD`
 
 	More details and important warnings are there in 1.1-MACE.md
+
+- Signing and Verifying (@/crypto/ed25519.go)
+	> Same as Ed25519 Curve/Algo.
+
+- Sharing secret (@/crypto/x25519.go)
+	> Same as X25519 Curve/Algo.
