@@ -15,12 +15,13 @@ type Server struct {
 	storage *database.BadgerStore
 }
 
-func NewServer(address string, storage *database.BadgerStore) *Server {
+func NewServer(ctx context.Context, address string, storage *database.BadgerStore) *Server {
 	r := mux.NewRouter()
 	
-	c := controllers.NewController(storage)
+	c := controllers.NewController(ctx, storage)
 
 	r.HandleFunc("/hello-world", c.HelloWorld).Methods("GET", "POST")
+	r.HandleFunc("/session/init", c.SessionInit).Methods("POST")
 
 	srv := &http.Server{
 		Addr: address,

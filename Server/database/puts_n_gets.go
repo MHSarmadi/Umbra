@@ -93,3 +93,51 @@ func (s *BadgerStore) GetUserByUsername(ctx context.Context, username string) (*
 	}
 	return s.GetUserByUUID(ctx, u.UUID)
 }
+
+func (s *BadgerStore) PutSession(ctx context.Context, u *models.Session) error {
+	if len(u.UUID) == 0 {
+		u.UUID = [24]byte(make([]byte, 24))
+		if _, err := rand.Read(u.UUID[:]); err != nil {
+			return err
+		}
+	}
+	if u.CreatedAt.IsZero() {
+		u.CreatedAt = time.Now().UTC()
+	}
+	if u.ExpiresAt.IsZero() {
+		u.ExpiresAt = time.Now().Add(5 * time.Minute).UTC()
+	}
+	val, err := json.Marshal(u)
+	if err != nil {
+		return err
+	}
+	err = s.db.Update(func(txn *badger.Txn) error {
+		if err := txn.Set(u.KeyByUUID(), val); err != nil {
+			return err
+		}
+		return nil
+	})
+	return err
+}
+
+func (s *BadgerStore) GetSessionByUUID(ctx context.Context, uuid [24]byte) (*models.Session, error) {
+	u := models.Session{
+		UUID: uuid,
+	}
+	err := s.db.View(func(txn *badger.Txn) error {
+		item, err := txn.Get(u.KeyByUUID())
+		if err != nil {
+			return err
+		}
+		return item.Value(func(val []byte) error {
+			return json.Unmarshal(val, &u)
+		})
+	})
+	if err == badger.ErrKeyNotFound {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &u, nil
+}
