@@ -21,6 +21,7 @@ func NewServer(ctx context.Context, address string, storage *database.BadgerStor
 	c := controllers.NewController(ctx, storage)
 
 	r.HandleFunc("/hello-world", c.HelloWorld).Methods("GET", "POST")
+	r.HandleFunc("/demo/captcha", c.DemoCaptcha).Methods("GET")
 	r.HandleFunc("/session/init", c.SessionInit).Methods("POST")
 
 	srv := &http.Server{
