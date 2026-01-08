@@ -11,6 +11,7 @@ func SetupRoutes(app gearbox.Gearbox, c *ctrl.Controller) {
 	helloWorldRoutes := []*gearbox.Route{
 		app.Get("/", c.HelloWorld),
 		app.Post("/", c.HelloWorld),
+		app.Put("/", c.HelloWorld),
 	}
 
 	app.Group("/hello-world", helloWorldRoutes)
