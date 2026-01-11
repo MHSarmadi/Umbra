@@ -3,59 +3,67 @@ package controllers
 import (
 	"crypto/rand"
 	"encoding/base64"
-	"encoding/binary"
 	"encoding/json"
 	"net/http"
 	"time"
 
+	"github.com/MHSarmadi/Umbra/Server/captcha"
 	"github.com/MHSarmadi/Umbra/Server/crypto"
+	math_tools "github.com/MHSarmadi/Umbra/Server/math"
 	"github.com/MHSarmadi/Umbra/Server/models"
 	models_requests "github.com/MHSarmadi/Umbra/Server/models/requests"
 )
 
 const Expiry_Offset = 300 * time.Second
 
-func (c *Controller) SessionInit(w http.ResponseWriter, r *http.Request) {
-	var body_encoded models_requests.SessionInitRequestEncoded
-	json.NewDecoder(r.Body).Decode(&body_encoded)
+var (
+	b64url  = base64.RawURLEncoding.EncodeToString
+	db64url = base64.RawURLEncoding.DecodeString
+)
 
-	var err error
-	var body_decoded models_requests.SessionInitRequestDecoded
-	if body_decoded.ClientEdPubKey, err = base64.RawURLEncoding.DecodeString(body_encoded.ClientEdPubKey); err != nil {
-		BadRequest(w, "invalid client_ed_pubkey base64url encoding")
-	} else if body_decoded.ClientXPubKey, err = base64.RawURLEncoding.DecodeString(body_encoded.ClientXPubKey); err != nil {
-		BadRequest(w, "invalid client_x_pubkey base64url encoding")
-	} else if body_decoded.ClientXPubKeySignature, err = base64.RawURLEncoding.DecodeString(body_encoded.ClientXPubKeySignature); err != nil {
-		BadRequest(w, "invalid client_x_pubkey_sign base64url encoding")
+func (c *Controller) SessionInit(w http.ResponseWriter, r *http.Request) {
+	var (
+		err          error
+		body_encoded models_requests.SessionInitRequestEncoded
+		body_decoded models_requests.SessionInitRequestDecoded
+	)
+	json.NewDecoder(r.Body).Decode(&body_encoded)
+	
+	if body_decoded.ClientEdPubKey, err = db64url(body_encoded.ClientEdPubKey); err != nil {
+		http.Error(w, "invalid client_ed_pubkey base64url encoding", http.StatusBadRequest)
+	} else if body_decoded.ClientXPubKey, err = db64url(body_encoded.ClientXPubKey); err != nil {
+		http.Error(w, "invalid client_x_pubkey base64url encoding", http.StatusBadRequest)
+	} else if body_decoded.ClientXPubKeySignature, err = db64url(body_encoded.ClientXPubKeySignature); err != nil {
+		http.Error(w, "invalid client_x_pubkey_sign base64url encoding", http.StatusBadRequest)
 	} else if crypto.Verify(body_decoded.ClientEdPubKey, body_decoded.ClientXPubKey, body_decoded.ClientXPubKeySignature) == false {
-		BadRequest(w, "invalid signature over client_x_pubkey")
+		http.Error(w, "invalid signature over client_x_pubkey", http.StatusBadRequest)
 	} else {
 		if len(body_decoded.ClientEdPubKey) != 32 || len(body_decoded.ClientXPubKey) != 32 {
-			BadRequest(w, "invalid ed-pubkey or x-pubkey")
+		http.Error(w, "invalid ed-pubkey or x-pubkey", http.StatusBadRequest)
 			return
 		}
 		var session_id [24]byte
 		if _, err := rand.Read(session_id[:]); err != nil {
-			InternalServerError(w, "unexpected server error")
+			http.Error(w, "could not read entropy", http.StatusInternalServerError)
 			return
 		}
 
 		var server_soul [32]byte
 		if _, err := rand.Read(server_soul[:]); err != nil {
-			InternalServerError(w, "unexpected server error")
+			http.Error(w, "could not read entropy", http.StatusInternalServerError)
 			return
 		}
 
 		server_ed_pubkey := crypto.DeriveEd25519PubKey(server_soul[:])
 		server_x_pubkey, err := crypto.DeriveX25519PubKey(server_soul[:])
 		if err != nil {
-			panic("unexpected error while deriving x25519 pubkey")
+			http.Error(w, "could not derive pubkey", http.StatusInternalServerError)
 		}
 		server_x_pubkey_sign := crypto.Sign(server_soul[:], server_x_pubkey)
 
 		var pow_challenge [2]byte
 		if _, err := rand.Read(pow_challenge[:]); err != nil {
-			InternalServerError(w, "unexpected server error")
+			http.Error(w, "could not read entropy", http.StatusInternalServerError)
 			return
 		}
 		pow_params := models.PowParamsType{
@@ -64,10 +72,15 @@ func (c *Controller) SessionInit(w http.ResponseWriter, r *http.Request) {
 			Parallelism: 1,
 		}
 
-		var captcha_solution [8]byte
-		if _, err := rand.Read(captcha_solution[:]); err != nil {
-			InternalServerError(w, "unexpected server error")
-			return
+		captcha_solution := math_tools.RandomDecimalString(6)
+		var captcha_solution_numeric uint64 = 0
+		for _, c := range captcha_solution {
+			captcha_solution_numeric *= 10
+			captcha_solution_numeric += uint64(c - '0')
+		}
+		captcha_png, err := captcha.GenerateNumericCaptcha(captcha_solution)
+		if err != nil {
+			http.Error(w, "could not draw captcha", http.StatusInternalServerError)
 		}
 
 		session := models.Session{
@@ -81,13 +94,13 @@ func (c *Controller) SessionInit(w http.ResponseWriter, r *http.Request) {
 
 			ServerSoul: server_soul,
 
-			PoWChallenge: pow_challenge,
-			PoWParams:    pow_params,
+			PoWChallenge:    pow_challenge,
+			PoWParams:       pow_params,
+			CaptchaSolution: captcha_solution_numeric,
 		}
-		binary.BigEndian.PutUint64(captcha_solution[:], session.CaptchaSolution)
 
 		if err := c.storage.PutSession(c.ctx, &session); err != nil {
-			InternalServerError(w, "unexpected server error")
+			http.Error(w, "could not store seesion", http.StatusInternalServerError)
 			return
 		}
 
@@ -101,38 +114,39 @@ func (c *Controller) SessionInit(w http.ResponseWriter, r *http.Request) {
 			Signature              string `json:"signature"`
 		}
 		type SessionInitRawPayload struct {
-			CaptchaChallenge string `json:"captcha_challenge"`
-			PoWChallenge string `json:"pow_challenge"`
-			PowParams models.PowParamsType `json:"pow_params"`
+			CaptchaChallenge string               `json:"captcha_challenge"`
+			PoWChallenge     string               `json:"pow_challenge"`
+			PowParams        models.PowParamsType `json:"pow_params"`
 		}
+
 		payload_raw := SessionInitRawPayload{
-			CaptchaChallenge: "",
-			PoWChallenge: base64.RawURLEncoding.EncodeToString(session.PoWChallenge[:]),
-			PowParams: session.PoWParams,
+			CaptchaChallenge: b64url(captcha_png),
+			PoWChallenge:     b64url(session.PoWChallenge[:]),
+			PowParams:        session.PoWParams,
 		}
 		payload_encoded, err := json.Marshal(payload_raw)
 		if err != nil {
-			InternalServerError(w, "unexpected server error")
+			http.Error(w, "could not marshal to json", http.StatusInternalServerError)
 			return
 		}
 		shared_secret, err := crypto.ComputeSharedSecret(server_soul[:], body_decoded.ClientXPubKey)
 		if err != nil {
-			InternalServerError(w, "unexpected server error")
+			http.Error(w, "could not compute shared secret", http.StatusInternalServerError)
 			return
 		}
 		shared_key := crypto.KDF(shared_secret, "@SESSION-SHARED-KEY", 32)
 		payload_ciphered, payload_salt := crypto.MACE_Encrypt(shared_key, payload_encoded, "@RESPONSE-PAYLOAD", 1, false)
-		payload := append(payload_ciphered, payload_salt...) // payload_salt is always exactly 12 bytes
+		payload := append(payload_salt, payload_ciphered...) // payload_salt is always exactly 12 bytes
 		signature := crypto.Sign(server_soul[:], payload)
 
 		response := SessionInitResponse{
-			Status: "ok",
-			SessionUUID: base64.RawURLEncoding.EncodeToString(session.UUID[:]),
-			ServerEdPubKey: base64.RawURLEncoding.EncodeToString(server_ed_pubkey),
-			ServerXPubKey: base64.RawURLEncoding.EncodeToString(server_x_pubkey),
-			ServerXPubKeySignature: base64.RawURLEncoding.EncodeToString(server_x_pubkey_sign),
-			Payload: base64.RawURLEncoding.EncodeToString(payload),
-			Signature: base64.RawURLEncoding.EncodeToString(signature),
+			Status:                 "ok",
+			SessionUUID:            b64url(session.UUID[:]),
+			ServerEdPubKey:         b64url(server_ed_pubkey),
+			ServerXPubKey:          b64url(server_x_pubkey),
+			ServerXPubKeySignature: b64url(server_x_pubkey_sign),
+			Payload:                b64url(payload),
+			Signature:              b64url(signature),
 		}
 		json.NewEncoder(w).Encode(response)
 	}
