@@ -3,6 +3,7 @@ package controllers
 import (
 	"crypto/rand"
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/json"
 	"net/http"
 	"time"
@@ -28,7 +29,7 @@ func (c *Controller) SessionInit(w http.ResponseWriter, r *http.Request) {
 		body_decoded models_requests.SessionInitRequestDecoded
 	)
 	json.NewDecoder(r.Body).Decode(&body_encoded)
-	
+
 	if body_decoded.ClientEdPubKey, err = db64url(body_encoded.ClientEdPubKey); err != nil {
 		http.Error(w, "invalid client_ed_pubkey base64url encoding", http.StatusBadRequest)
 	} else if body_decoded.ClientXPubKey, err = db64url(body_encoded.ClientXPubKey); err != nil {
@@ -39,7 +40,7 @@ func (c *Controller) SessionInit(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid signature over client_x_pubkey", http.StatusBadRequest)
 	} else {
 		if len(body_decoded.ClientEdPubKey) != 32 || len(body_decoded.ClientXPubKey) != 32 {
-		http.Error(w, "invalid ed-pubkey or x-pubkey", http.StatusBadRequest)
+			http.Error(w, "invalid ed-pubkey or x-pubkey", http.StatusBadRequest)
 			return
 		}
 		var session_id [24]byte
@@ -78,10 +79,19 @@ func (c *Controller) SessionInit(w http.ResponseWriter, r *http.Request) {
 			captcha_solution_numeric *= 10
 			captcha_solution_numeric += uint64(c - '0')
 		}
+		captcha_solution_bytes := make([]byte, 8)
+		binary.BigEndian.PutUint64(captcha_solution_bytes, captcha_solution_numeric)
 		captcha_png, err := captcha.GenerateNumericCaptcha(captcha_solution)
 		if err != nil {
 			http.Error(w, "could not draw captcha", http.StatusInternalServerError)
 		}
+
+		var session_token [24]byte
+		if _, err := rand.Read(session_token[:]); err != nil {
+			http.Error(w, "could not read entropy", http.StatusInternalServerError)
+			return
+		}
+		session_token_ciphered, session_token_salt := crypto.MACE_Encrypt(captcha_solution_bytes, session_token[:], "@SESSION-TOKEN", 2, false)
 
 		session := models.Session{
 			UUID: session_id,
@@ -94,9 +104,10 @@ func (c *Controller) SessionInit(w http.ResponseWriter, r *http.Request) {
 
 			ServerSoul: server_soul,
 
-			PoWChallenge:    pow_challenge,
-			PoWParams:       pow_params,
-			CaptchaSolution: captcha_solution_numeric,
+			SessionToken: session_token,
+
+			PoWChallenge: pow_challenge,
+			PoWParams:    pow_params,
 		}
 
 		if err := c.storage.PutSession(c.ctx, &session); err != nil {
@@ -117,12 +128,14 @@ func (c *Controller) SessionInit(w http.ResponseWriter, r *http.Request) {
 			CaptchaChallenge string               `json:"captcha_challenge"`
 			PoWChallenge     string               `json:"pow_challenge"`
 			PowParams        models.PowParamsType `json:"pow_params"`
+			SessionToken     string               `json:"session_token_ciphered"`
 		}
 
 		payload_raw := SessionInitRawPayload{
 			CaptchaChallenge: b64url(captcha_png),
 			PoWChallenge:     b64url(session.PoWChallenge[:]),
 			PowParams:        session.PoWParams,
+			SessionToken:     b64url(append(session_token_salt, session_token_ciphered...)), // session_token_salt is always exactly 12 bytes
 		}
 		payload_encoded, err := json.Marshal(payload_raw)
 		if err != nil {
@@ -135,7 +148,7 @@ func (c *Controller) SessionInit(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		shared_key := crypto.KDF(shared_secret, "@SESSION-SHARED-KEY", 32)
-		payload_ciphered, payload_salt := crypto.MACE_Encrypt(shared_key, payload_encoded, "@RESPONSE-PAYLOAD", 1, false)
+		payload_ciphered, payload_salt := crypto.MACE_Encrypt(shared_key, payload_encoded, "@RESPONSE-PAYLOAD", 8, false)
 		payload := append(payload_salt, payload_ciphered...) // payload_salt is always exactly 12 bytes
 		signature := crypto.Sign(server_soul[:], payload)
 

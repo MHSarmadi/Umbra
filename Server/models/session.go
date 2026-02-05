@@ -19,14 +19,14 @@ type Session struct {
 
 	ServerSoul [32]byte `json:"server_soul"`
 
-	SessionToken [32]byte `json:"session_token"`
+	SessionToken [24]byte `json:"session_token"`
 
 	LastNonces   map[string]int64 `json:"last_nonces"`   // int64: unix timestamp "seconds"
 	LastActivity int64            `json:"last_activity"` // int64: unix timestamp "seconds"
 
 	PoWChallenge    [2]byte       `json:"pow_challenge"`
 	PoWParams       PowParamsType `json:"pow_params"`
-	CaptchaSolution uint64        `json:"captcha_solution"`
+	PoWSolution     []byte        `json:"pow_solution"`
 }
 
 func (u *Session) KeyByUUID() []byte {
