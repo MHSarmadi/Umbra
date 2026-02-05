@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-DIST_DIR="$ROOT_DIR/dist"
+DIST_DIR="$ROOT_DIR/frontend/public"
 CMD_DIR="$ROOT_DIR/cmd/umbra-wasm"
 
 mkdir -p "$DIST_DIR"
