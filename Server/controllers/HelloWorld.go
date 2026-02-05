@@ -3,6 +3,7 @@ package controllers
 import "net/http"
 
 func (c *Controller) HelloWorld(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(`{"msg":"Hello, World!"}`))
 }

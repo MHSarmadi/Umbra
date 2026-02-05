@@ -161,6 +161,8 @@ func (c *Controller) SessionInit(w http.ResponseWriter, r *http.Request) {
 			Payload:                b64url(payload),
 			Signature:              b64url(signature),
 		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
 		json.NewEncoder(w).Encode(response)
 	}
 }
