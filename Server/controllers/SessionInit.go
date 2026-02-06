@@ -68,8 +68,8 @@ func (c *Controller) SessionInit(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		pow_params := models.PowParamsType{
-			MemoryMB:    256,
-			Iterations:  4,
+			MemoryMB:    12,
+			Iterations:  2,
 			Parallelism: 1,
 		}
 

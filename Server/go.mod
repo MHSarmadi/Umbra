@@ -4,8 +4,8 @@ go 1.24.5
 
 require (
 	github.com/dgraph-io/badger/v4 v4.1.0
-	github.com/zeebo/blake3 v0.2.4
 	github.com/gorilla/mux v1.8.1
+	github.com/zeebo/blake3 v0.2.4
 )
 
 require (
@@ -22,6 +22,7 @@ require (
 	github.com/klauspost/cpuid/v2 v2.0.12 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	go.opencensus.io v0.22.5 // indirect
-	golang.org/x/net v0.7.0 // indirect
-	golang.org/x/sys v0.5.0 // indirect
+	golang.org/x/crypto v0.47.0 // indirect
+	golang.org/x/net v0.48.0 // indirect
+	golang.org/x/sys v0.40.0 // indirect
 )

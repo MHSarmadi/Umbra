@@ -4,10 +4,13 @@
 package main
 
 import (
+	"encoding/binary"
 	"fmt"
+	"slices"
 	"syscall/js"
 
 	"github.com/MHSarmadi/Umbra/Client/crypto"
+	"golang.org/x/crypto/argon2"
 )
 
 func jsValueToByteSlice(v js.Value) ([]byte, error) {
@@ -31,9 +34,127 @@ func jsValueToByteSlice(v js.Value) ([]byte, error) {
 	return dst, nil
 }
 
+type ProgressReport struct {
+	Type       string
+	ID         string
+	Percentage float64
+}
+
 func main() {
+	progressChan := make(chan ProgressReport, 1000)
+
+	go func() {
+		for report := range progressChan {
+			jsProgressCallback := js.Global().Get("onProgressMade")
+			if !jsProgressCallback.IsUndefined() {
+				jsProgressCallback.Invoke(report.Type, report.ID, report.Percentage)
+			}
+		}
+	}()
+	
 	js.Global().Set("umbraReady", js.FuncOf(func(this js.Value, args []js.Value) any {
 		return "Umbra WASM initialized"
+	}))
+
+	js.Global().Set("ComputePoW", js.FuncOf(func(this js.Value, args []js.Value) any {
+		// expected args: progress_id, challenge, salt, memory_mb, iterations, parallelism
+		// return: Promise<error|number>
+		if len(args) < 6 {
+			return js.Global().Get("Promise").New(js.FuncOf(func(_ js.Value, promArgs []js.Value) any {
+				reject := promArgs[1]
+				reject.Invoke(js.Error{Value: js.ValueOf("At least 6 parameters are required: progress_id, challenge, salt, memory_mb, iterations, parallelism")})
+				return nil
+			}))
+		}
+
+		progressID := args[0].String()
+		challenge, err := jsValueToByteSlice(args[1])
+		if err != nil {
+			return js.Global().Get("Promise").New(js.FuncOf(func(_ js.Value, promArgs []js.Value) any {
+				reject := promArgs[1]
+				reject.Invoke(js.Error{Value: js.ValueOf("Invalid challenge: " + err.Error())})
+				return nil
+			}))
+		}
+
+		salt, err := jsValueToByteSlice(args[2])
+		if err != nil {
+			return js.Global().Get("Promise").New(js.FuncOf(func(_ js.Value, promArgs []js.Value) any {
+				reject := promArgs[1]
+				reject.Invoke(js.Error{Value: js.ValueOf("Invalid salt: " + err.Error())})
+				return nil
+			}))
+		}
+
+		memoryMB := args[3].Int()
+		iterations := args[4].Int()
+		parallelism := args[5].Int()
+
+		if memoryMB <= 0 || iterations <= 0 || parallelism <= 0 {
+			return js.Global().Get("Promise").New(js.FuncOf(func(_ js.Value, promArgs []js.Value) any {
+				reject := promArgs[1]
+				reject.Invoke(js.Error{Value: js.ValueOf("Memory, iterations, and parallelism must be greater than 0")})
+				return nil
+			}))
+		}
+
+		theoretical_max_attempts := 1 << (8 * len(challenge))
+		attempts_per_report := theoretical_max_attempts / 100
+		
+		return js.Global().Get("Promise").New(js.FuncOf(func(_ js.Value, promArgs []js.Value) any {
+			resolve := promArgs[0]
+			reject := promArgs[1]
+
+			go func() {
+				defer func() {
+					if r := recover(); r != nil {
+						reject.Invoke(js.Error{Value: js.ValueOf(fmt.Sprintf("Panic occurred: %v", r))})
+					}
+				}()
+
+				// initial report
+				select {
+					case progressChan <- ProgressReport{
+						Type:       "pow",
+						ID:         progressID,
+						Percentage: 0,
+					}:
+					default:
+				}
+				
+				// brute-force the PoW challenge
+				var nonce uint64 = 0
+				var nonce_bytes [8]byte = [8]byte{0,0,0,0,0,0,0,0}
+				attempt := 0
+				for attempt < 2 * theoretical_max_attempts {
+					attempt++
+					if attempt%attempts_per_report == 0 {
+						select {
+							case progressChan <- ProgressReport{
+								Type:       "pow",
+								ID:         progressID,
+								Percentage: float64(attempt) / float64(theoretical_max_attempts) * 100,
+							}:
+							default:
+						}
+					}
+
+					// compute the hash
+					hash := argon2.IDKey(nonce_bytes[:], salt, uint32(iterations), uint32(memoryMB*1024), uint8(parallelism), 32)
+					if slices.Equal(hash[:len(challenge)], challenge) {
+						resolve.Invoke(nonce)
+						return
+					} else {
+						nonce++
+						binary.BigEndian.PutUint64(nonce_bytes[:], nonce)
+					}
+				}
+				reject.Invoke(js.Error{Value: js.ValueOf("No valid nonce found after the theoretical maximum twice attempts")})
+			}()
+
+			return nil
+		}))
+
 	}))
 
 	js.Global().Set("MACE_Encrypt", js.FuncOf(func(this js.Value, args []js.Value) any {
