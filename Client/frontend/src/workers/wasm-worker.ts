@@ -6,6 +6,16 @@ eval(wasmExecCode); // Defines 'Go' class
 
 let go = null, initialized = false;
 
+declare global {
+	interface Window {
+		onProgressMade?: (type: string, id: string, percentage: number) => void;
+		
+		// expected args: progress_id, challenge, salt, memory_mb, iterations, parallelism
+		// return: Promise<error|number>
+		ComputePoW?: (progress_id: string, challenge: Uint8Array, salt: Uint8Array, memory_mb: number, iterations: number, parallelism: number) => Promise<string>;
+	}
+}
+
 self.onmessage = async (event: MessageEvent) => {
 	if (!initialized || event.data.type === 'init') {
 		try {
@@ -67,5 +77,30 @@ self.onmessage = async (event: MessageEvent) => {
 			console.error('Error during encryption:', err);
 			self.postMessage({ type: 'encrypt', success: false, error: (err as Error).message });
 		}
+	} else if (event.data.type === 'PoW') {
+		try {
+			const result = await self.ComputePoW?.(
+				event.data.progress_id,
+				new Uint8Array(event.data.challenge),
+				new Uint8Array(event.data.salt),
+				event.data.memory_mb,
+				event.data.iterations,
+				event.data.parallelism
+			);
+			if (typeof result !== 'number') {
+				throw new Error("ComputePoW did not return a valid result");
+			}
+			self.postMessage({ type: 'PoW', success: true, result });
+		} catch (err) {
+			console.error('Error during PoW computation:', err);
+			self.postMessage({ type: 'PoW', success: false, error: (err as Error).message });
+		}
+	} else {
+		console.warn('Unknown message type:', event.data.type);
 	}
+}
+
+
+self.onProgressMade = (type: string, id: string, percentage: number) => {
+	self.postMessage({ type: 'progress', success: true, progressType: type, id, percentage });
 }
