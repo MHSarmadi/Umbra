@@ -1,7 +1,7 @@
 :root {
 	--deep-bg: #000;
 	--dark-secondary-bg: #0B0B0B;
-	--secondary-bg: #1A1A1A;
+	--secondary-bg: #191919;
 	--hover-bg: #2C2C2C;
 	--bright-bg: #333;
 	--main-color: #004D40;
@@ -34,14 +34,14 @@
 @font-face {
 	font-family: vend-sans;
 	src: url("/fonts/VendSans-VariableFont_wght.ttf") format("truetype");
-	font-weight: 400;
+	font-weight: 500;
 	font-style: normal;
 }
 
 @font-face {
 	font-family: vend-sans;
 	src: url("/fonts/VendSans-Italic-VariableFont_wght.ttf") format("truetype");
-	font-weight: 400;
+	font-weight: 500;
 	font-style: italic;
 }
 
@@ -53,16 +53,15 @@ body,
 	background-color: var(--deep-bg);
 	color: var(--text-color);
 	width: 100vw;
-	height: 100vh;
+	height: 100dvh;
 	overflow: hidden;
 }
 
 h1 {
 	border-bottom: 2px solid var(--bright-bg);
-	
-	&.bolder {
-		font-variation-settings: "wght" 900;
-	}
+}
+h1, .bolder {
+	font-variation-settings: "wght" 700;
 }
 
 h2,
@@ -72,7 +71,7 @@ h5,
 h6,
 .bold,
 b {
-	font-variation-settings: "wght" 600;
+	font-variation-settings: "wght" 500;
 }
 
 .italic,
@@ -175,4 +174,9 @@ img.inline, svg.inline {
 	flex-flow: row nowrap;
 	justify-content: center;
 	align-items: center;
+
+	.failure-message {
+		color: var(--alert-color);
+		
+	}
 }

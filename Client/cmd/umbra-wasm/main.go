@@ -4,6 +4,8 @@
 package main
 
 import (
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/binary"
 	"fmt"
 	"slices"
@@ -51,9 +53,52 @@ func main() {
 			}
 		}
 	}()
-	
+
 	js.Global().Set("umbraReady", js.FuncOf(func(this js.Value, args []js.Value) any {
 		return "Umbra WASM initialized"
+	}))
+
+	js.Global().Set("SessionKeypair", js.FuncOf(func(this js.Value, args []js.Value) any {
+		return js.Global().Get("Promise").New(js.FuncOf(func(_ js.Value, promArgs []js.Value) any {
+			resolve := promArgs[0]
+			reject := promArgs[1]
+
+			go func() {
+				defer func() {
+					if r := recover(); r != nil {
+						reject.Invoke(js.Error{Value: js.ValueOf(fmt.Sprintf("Panic occurred: %v", r))})
+					}
+				}()
+
+				// Generate soul
+				var soul [32]byte
+				if _, err := rand.Read(soul[:]); err != nil {
+					reject.Invoke(js.Error{Value: js.ValueOf("Could not read entropy for soul generation")})
+					return
+				}
+
+				// Derive keys
+				edPubKey := crypto.DeriveEd25519PubKey(soul[:])
+				xPubKey, err := crypto.DeriveX25519PubKey(soul[:])
+				if err != nil {
+					reject.Invoke(js.Error{Value: js.ValueOf("Could not derive X25519 public key: " + err.Error())})
+					return
+				}
+				xPubKeySign := crypto.Sign(soul[:], xPubKey)
+
+				// Prepare response
+				response := js.Global().Get("Object").New()
+				response.Set("ed_pubkey", base64.RawURLEncoding.EncodeToString(edPubKey))
+				response.Set("x_pubkey", base64.RawURLEncoding.EncodeToString(xPubKey))
+				response.Set("x_pubkey_sign", base64.RawURLEncoding.EncodeToString(xPubKeySign))
+				response.Set("soul", js.Global().Get("Uint8Array").New(32))
+				js.CopyBytesToJS(response.Get("soul"), soul[:])
+
+				resolve.Invoke(response)
+			}()
+
+			return nil
+		}))
 	}))
 
 	js.Global().Set("ComputePoW", js.FuncOf(func(this js.Value, args []js.Value) any {
@@ -100,7 +145,7 @@ func main() {
 
 		theoretical_max_attempts := 1 << (8 * len(challenge))
 		attempts_per_report := theoretical_max_attempts / 100
-		
+
 		return js.Global().Get("Promise").New(js.FuncOf(func(_ js.Value, promArgs []js.Value) any {
 			resolve := promArgs[0]
 			reject := promArgs[1]
@@ -114,28 +159,28 @@ func main() {
 
 				// initial report
 				select {
-					case progressChan <- ProgressReport{
-						Type:       "pow",
-						ID:         progressID,
-						Percentage: 0,
-					}:
-					default:
+				case progressChan <- ProgressReport{
+					Type:       "pow",
+					ID:         progressID,
+					Percentage: 0,
+				}:
+				default:
 				}
-				
+
 				// brute-force the PoW challenge
 				var nonce uint64 = 0
-				var nonce_bytes [8]byte = [8]byte{0,0,0,0,0,0,0,0}
+				var nonce_bytes [8]byte = [8]byte{0, 0, 0, 0, 0, 0, 0, 0}
 				attempt := 0
-				for attempt < 2 * theoretical_max_attempts {
+				for attempt < 2*theoretical_max_attempts {
 					attempt++
 					if attempt%attempts_per_report == 0 {
 						select {
-							case progressChan <- ProgressReport{
-								Type:       "pow",
-								ID:         progressID,
-								Percentage: float64(attempt) / float64(theoretical_max_attempts) * 100,
-							}:
-							default:
+						case progressChan <- ProgressReport{
+							Type:       "pow",
+							ID:         progressID,
+							Percentage: float64(attempt) / float64(theoretical_max_attempts) * 100,
+						}:
+						default:
 						}
 					}
 

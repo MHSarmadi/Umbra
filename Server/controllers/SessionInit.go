@@ -32,12 +32,20 @@ func (c *Controller) SessionInit(w http.ResponseWriter, r *http.Request) {
 
 	if body_decoded.ClientEdPubKey, err = db64url(body_encoded.ClientEdPubKey); err != nil {
 		http.Error(w, "invalid client_ed_pubkey base64url encoding", http.StatusBadRequest)
+		return
 	} else if body_decoded.ClientXPubKey, err = db64url(body_encoded.ClientXPubKey); err != nil {
 		http.Error(w, "invalid client_x_pubkey base64url encoding", http.StatusBadRequest)
+		return
 	} else if body_decoded.ClientXPubKeySignature, err = db64url(body_encoded.ClientXPubKeySignature); err != nil {
 		http.Error(w, "invalid client_x_pubkey_sign base64url encoding", http.StatusBadRequest)
+		return
+	} else if len(body_decoded.ClientEdPubKey) != 32 || len(body_decoded.ClientXPubKey) != 32 {
+		// Check lengths BEFORE calling Verify
+		http.Error(w, "invalid ed-pubkey or x-pubkey length", http.StatusBadRequest)
+		return
 	} else if crypto.Verify(body_decoded.ClientEdPubKey, body_decoded.ClientXPubKey, body_decoded.ClientXPubKeySignature) == false {
 		http.Error(w, "invalid signature over client_x_pubkey", http.StatusBadRequest)
+		return
 	} else {
 		if len(body_decoded.ClientEdPubKey) != 32 || len(body_decoded.ClientXPubKey) != 32 {
 			http.Error(w, "invalid ed-pubkey or x-pubkey", http.StatusBadRequest)
