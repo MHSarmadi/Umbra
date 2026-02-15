@@ -67,18 +67,24 @@ func (c *Controller) SessionInit(w http.ResponseWriter, r *http.Request) {
 		server_x_pubkey, err := crypto.DeriveX25519PubKey(server_soul[:])
 		if err != nil {
 			http.Error(w, "could not derive pubkey", http.StatusInternalServerError)
+			return
 		}
 		server_x_pubkey_sign := crypto.Sign(server_soul[:], server_x_pubkey)
 
-		var pow_challenge [2]byte
+		var pow_challenge [1]byte
 		if _, err := rand.Read(pow_challenge[:]); err != nil {
 			http.Error(w, "could not read entropy", http.StatusInternalServerError)
 			return
 		}
 		pow_params := models.PowParamsType{
 			MemoryMB:    12,
-			Iterations:  2,
+			Iterations:  6,
 			Parallelism: 1,
+		}
+		var pow_salt [12]byte
+		if _, err := rand.Read(pow_salt[:]); err != nil {
+			http.Error(w, "could not read entropy", http.StatusInternalServerError)
+			return
 		}
 
 		captcha_solution := math_tools.RandomDecimalString(6)
@@ -116,6 +122,7 @@ func (c *Controller) SessionInit(w http.ResponseWriter, r *http.Request) {
 
 			PoWChallenge: pow_challenge,
 			PoWParams:    pow_params,
+			PoWSalt:      pow_salt,
 		}
 
 		if err := c.storage.PutSession(c.ctx, &session); err != nil {
@@ -131,19 +138,22 @@ func (c *Controller) SessionInit(w http.ResponseWriter, r *http.Request) {
 			ServerXPubKeySignature string `json:"server_x_pubkey_sign"`
 			Payload                string `json:"payload"`
 			Signature              string `json:"signature"`
+			// SharedSecret           string `json:"shared_secret"` // ONLY FOR TESTING PURPOSES. REMOVE THIS IN PRODUCTION.
 		}
 		type SessionInitRawPayload struct {
 			CaptchaChallenge string               `json:"captcha_challenge"`
 			PoWChallenge     string               `json:"pow_challenge"`
 			PowParams        models.PowParamsType `json:"pow_params"`
+			PoWSalt          string               `json:"pow_salt"`
 			SessionToken     string               `json:"session_token_ciphered"`
 		}
 
 		payload_raw := SessionInitRawPayload{
-			CaptchaChallenge: b64url(captcha_png),
 			PoWChallenge:     b64url(session.PoWChallenge[:]),
 			PowParams:        session.PoWParams,
+			PoWSalt:          b64url(session.PoWSalt[:]),
 			SessionToken:     b64url(append(session_token_salt, session_token_ciphered...)), // session_token_salt is always exactly 12 bytes
+			CaptchaChallenge: b64url(captcha_png),
 		}
 		payload_encoded, err := json.Marshal(payload_raw)
 		if err != nil {
@@ -156,8 +166,9 @@ func (c *Controller) SessionInit(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		shared_key := crypto.KDF(shared_secret, "@SESSION-SHARED-KEY", 32)
-		payload_ciphered, payload_salt := crypto.MACE_Encrypt(shared_key, payload_encoded, "@RESPONSE-PAYLOAD", 8, false)
-		payload := append(payload_salt, payload_ciphered...) // payload_salt is always exactly 12 bytes
+		payload_ciphered, payload_salt, payload_tag := crypto.MACE_Encrypt_AEAD(shared_key, payload_encoded, "@RESPONSE-PAYLOAD", 8, false)
+		payload := append(payload_salt, payload_tag...)
+		payload = append(payload, payload_ciphered...) // payload_salt is always exactly 12 bytes and payload_tag is always exactly 16 bytes
 		signature := crypto.Sign(server_soul[:], payload)
 
 		response := SessionInitResponse{
@@ -168,6 +179,7 @@ func (c *Controller) SessionInit(w http.ResponseWriter, r *http.Request) {
 			ServerXPubKeySignature: b64url(server_x_pubkey_sign),
 			Payload:                b64url(payload),
 			Signature:              b64url(signature),
+			// SharedSecret:           b64url(shared_key), // ONLY FOR TESTING PURPOSES. REMOVE THIS IN PRODUCTION.
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)

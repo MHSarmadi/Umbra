@@ -24,9 +24,10 @@ type Session struct {
 	LastNonces   map[string]int64 `json:"last_nonces"`   // int64: unix timestamp "seconds"
 	LastActivity int64            `json:"last_activity"` // int64: unix timestamp "seconds"
 
-	PoWChallenge    [2]byte       `json:"pow_challenge"`
-	PoWParams       PowParamsType `json:"pow_params"`
-	PoWSolution     []byte        `json:"pow_solution"`
+	PoWChallenge [1]byte       `json:"pow_challenge"`
+	PoWParams    PowParamsType `json:"pow_params"`
+	PoWSalt      [12]byte      `json:"pow_salt"`
+	PoWSolution  []byte        `json:"pow_solution"`
 }
 
 func (u *Session) KeyByUUID() []byte {

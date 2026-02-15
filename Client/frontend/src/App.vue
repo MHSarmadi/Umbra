@@ -5,8 +5,11 @@ import { onMounted, provide, ref } from 'vue';
 
 const wasmWorker = new WasmWorker();
 const workerRouter = ref<{[key: string]: (event: MessageEvent) => void}>({});
+const progressPercentages = ref<{[key: string]: (id: string) => (percentage: number) => void}>({});
 provide('wasmWorker', wasmWorker);
 provide('workerRouter', workerRouter);
+provide('progressPercentages', progressPercentages);
+
 
 var interval: number, counter = 0;
 workerRouter.value["setBaseURL"] = (event: MessageEvent) => {
@@ -17,6 +20,14 @@ workerRouter.value["setBaseURL"] = (event: MessageEvent) => {
 		clearInterval(interval);
 	} else {
 		console.warn('Failed to set base URL, retrying...', event.data.error);
+	}
+};
+workerRouter.value["progress"] = (event: MessageEvent) => {
+	const { progressType, id, percentage } = event.data;
+	if (typeof percentage === 'number' && typeof id === 'string') {
+		progressPercentages.value[progressType]?.(id)?.(percentage);
+	} else {
+		console.warn(`Invalid progress message: ${JSON.stringify(event.data)}`);
 	}
 };
 
@@ -32,7 +43,7 @@ onMounted(() => {
 
 wasmWorker.onmessage = (event: MessageEvent) => {
 	if (typeof workerRouter.value[event.data?.type ?? 'default'] === 'function') {
-		workerRouter.value[event.data?.type ?? 'default']?.(event);
+		workerRouter.value[event.data?.type ?? 'default']!(event);
 	} else {
 		console.warn(`No handler for worker message type: ${event.data?.type ?? 'default'}`);
 	}

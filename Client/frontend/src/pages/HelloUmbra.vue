@@ -1,12 +1,15 @@
 <script setup lang="ts">
 import { inject, ref, type Ref } from 'vue';
 import LargeButton from '../components/LargeButton.vue';
+import ProgressBar from '../components/ProgressBar.vue';
+import { base64urlToBase64, decodeBase64Url } from '../tools/base64url';
 // import { useRouter } from 'vue-router';
 
 // const $router = useRouter();
 
 const wasmWorker = inject('wasmWorker') as Worker;
 const workerRouter = inject('workerRouter') as Ref<{ [key: string]: (data: any) => void }>;
+const progressPercentages = inject('progressPercentages') as Ref<{ [key: string]: (id: string) => (percentage: number) => void }>;
 
 type Pages = 'HelloUmbra' | 'SessionInit';
 const current_page = ref<Pages>('HelloUmbra');
@@ -17,6 +20,9 @@ const step_failed = ref<boolean>(false);
 const failure_message = ref<string>('');
 
 const pow_percent = ref<number>(0);
+const pow_id = ref<string>('');
+
+const captcha_challenge_image = ref<string>('');
 
 workerRouter.value['SessionKeypair'] = (event: MessageEvent) => {
 	if (current_step.value !== 0 && event.data.success) {
@@ -29,6 +35,7 @@ workerRouter.value['SessionKeypair'] = (event: MessageEvent) => {
 		console.error('Session key pair generation failed:', event.data.error)
 		step_failed.value = true;
 		failure_message.value = 'Session key pair generation failed. Please refresh the page and try again. If the problem persists, please contact support.';
+		// failure_message.value = event.data.error
 	}
 }
 
@@ -38,31 +45,72 @@ workerRouter.value['SendSessionKeypair'] = (event: MessageEvent) => {
 		return; // Ignore if not in right step
 	}
 	if (event.data.success) {
-		current_step.value = 2;
-
-		// TODO: Proceed to next step, e.g., proof of work or human verification
-		setTimeout(() => {
-			// Simulate proof of work progress
-			const powInterval = setInterval(() => {
-				if (pow_percent.value >= 100) {
-					clearInterval(powInterval);
-					// Session initialization complete, proceed to next page or functionality
-					console.log("Session initialization complete!");
-					current_step.value = 3;
-				} else if (pow_percent.value < 180) {
-					pow_percent.value += Math.floor(Math.random() * 10) + 5; // Increment by random value for demo
-				} else {
-					// clearInterval(powInterval);
-					// step_failed.value = true;
-					// failure_message.value = 'Cryptographic proof of you not being a robot failed. Please refresh the page and try again. If the problem persists, please contact support.';
-					// console.error('Proof of work failed during session initialization.');
-				}
-			}, 500);
-		}, 1000);
+		console.log(event.data.response)
 	} else {
 		console.error('Failed to send session key pair:', event.data.error);
 		step_failed.value = true;
 		failure_message.value = 'Failed to send session key pair to the server. Please check your internet connection and try again. If the problem persists, please contact support.';
+	}
+}
+workerRouter.value['IntroduceServer'] = (event: MessageEvent) => {
+	if (current_step.value !== 1 && event.data.success) {
+		console.warn("Not in the right step for IntroduceServer response. Ignoring.")
+		return; // Ignore if not in right step
+	}
+	if (event.data.success) {
+		current_step.value = 2;
+		console.log(event.data.payload);
+		captcha_challenge_image.value = `data:image/png;base64,${base64urlToBase64(event.data.payload.captcha_challenge)}`
+		pow_id.value = Math.floor(Math.random() * 36 ** 8).toString(36); // Generate random ID for this proof of work session
+		// console.log(event.data.payload.pow_salt)
+		const challenge = decodeBase64Url(event.data.payload.pow_challenge), salt = decodeBase64Url(event.data.payload.pow_salt)
+		wasmWorker.postMessage({
+			type: "PoW",
+			progress_id: pow_id.value,
+			challenge: challenge.buffer,
+			salt: salt.buffer,
+			memory_mb: event.data.payload.pow_params.memory_mb,
+			iterations: event.data.payload.pow_params.iterations,
+			parallelism: event.data.payload.pow_params.parallelism
+		}, [
+			challenge.buffer,
+			salt.buffer
+		])
+	} else {
+		console.error('Failed to introduce server during session initialization:', event.data.error);
+		step_failed.value = true;
+		failure_message.value = 'Failed to establish a secure connection with the server. Please check your internet connection and try again. If the problem persists, please contact support.';
+	}
+}
+workerRouter.value['PoW'] = (event: MessageEvent) => {
+	if (current_step.value !== 2) {
+		console.warn("Not in the right step for PoW response. Ignoring.")
+		return; // Ignore if not in right step
+	}
+	if (event.data.success) {
+		// Session initialization complete, proceed to next page or functionality
+		console.log("Session initialization complete!");
+		console.log("PoW result:", event.data.result);
+		current_step.value = 3;
+	} else {
+		console.error('Proof of work failed during session initialization:', event.data.error);
+		step_failed.value = true;
+		failure_message.value = 'Cryptographic proof of you not being a robot failed. Please refresh the page and try again. If the problem persists, please contact support.';
+	}
+}
+
+const previous_pow_progress_function = progressPercentages.value['pow'];
+progressPercentages.value['pow'] = (id: string) => {
+	if (id !== pow_id.value) {
+		if (previous_pow_progress_function)
+			return previous_pow_progress_function?.(id) 
+		else 
+			return (_: number) => {
+				console.warn(`Received progress update for unknown proof of work session ID ${id}. Ignoring.`);
+			};
+	}
+	return (percentage: number) => {
+		pow_percent.value = Math.round(percentage * 100) / 100;
 	}
 }
 
@@ -189,7 +237,11 @@ function goto_session() {
 		<ul class="steps">
 			<li :class="`${current_step! > 0 ? 'done' : ((step_failed && current_step == 0) ? 'failed' : (!step_failed ? 'loading' : ''))}${current_step == 0 ? ' active' : ''}`">Generating session key pairs...</li>
 			<li :class="`${current_step! > 1 ? 'done' : ((step_failed && current_step == 1) ? 'failed' : (!step_failed ? 'loading' : ''))}${current_step == 1 ? ' active' : ''}`">Sending request to the server...</li>
-			<li :class="`${current_step! > 2 ? 'done' : ((step_failed && current_step == 2) ? 'failed' : (!step_failed ? 'loading' : ''))}${current_step == 2 ? ' active' : ''}`">Proving that it's not a robot... <span v-if="current_step == 2">({{ pow_percent }}%)</span></li>
+			<li :class="`${current_step! > 2 ? 'done' : ((step_failed && current_step == 2) ? 'failed' : (!step_failed ? 'loading' : ''))}${current_step == 2 ? ' active' : ''}`">
+				Proving that it's not a robot...
+				<!-- <span v-if="current_step == 2">({{ pow_percent }}%)</span> -->
+				<progress-bar v-if="current_step == 2" style="margin-left: 20px;" :percentage="pow_percent" size="large" />
+			</li>
 		</ul>
 		<p v-if="step_failed" class="failure-message">
 			{{ failure_message || 'Session initialization failed. Please refresh the page and try again.' }}
@@ -239,6 +291,11 @@ function goto_session() {
 	li {
 		position: relative;
 		margin-bottom: 0.8em;
+		display: flex;
+		flex-direction: row;
+		flex-wrap: nowrap;
+		align-items: center;
+		justify-content: flex-start;
 
 		&:not(.active) {
 			color: var(--comment-color);

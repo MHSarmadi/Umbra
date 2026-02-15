@@ -1,8 +1,9 @@
 /// <reference lib="webworker" />
 
+import { decodeBase64Url } from "../tools/base64url";
 import { useSecureVault } from "../db";
 
-const { storeSecret } = useSecureVault();
+const { storeSecret, retrieveSecret } = useSecureVault();
 
 const response = await fetch("/wasm_exec.js");
 const wasmExecCode = await response.text();
@@ -39,10 +40,28 @@ declare global {
 			x_pubkey: string,
 			x_pubkey_sign: string,
 			soul: Uint8Array<ArrayBuffer>
-		}>
+		}>;
+		IntroduceServer?: (
+			soul: Uint8Array<ArrayBuffer>,
+			server_ed_pubkey: string,
+			server_x_pubkey: string,
+			server_x_pubkey_sign: string,
+			payload: string,
+			signature: string,
+		) => Promise<{
+			captcha_challenge: string,
+			pow_challenge: string,
+			pow_salt: string,
+			pow_params: {
+				memory_mb: number,
+				iterations: number,
+				parallelism: number
+			},
+			session_token_ciphered: string
+		}>;
 		// expected args: progress_id, challenge, salt, memory_mb, iterations, parallelism
 		// return: Promise<error|number>
-		ComputePoW?: (progress_id: string, challenge: Uint8Array, salt: Uint8Array, memory_mb: number, iterations: number, parallelism: number) => Promise<string>;
+		ComputePoW?: (progress_id: string, challenge: Uint8Array<ArrayBuffer>, salt: Uint8Array<ArrayBuffer>, memory_mb: number, iterations: number, parallelism: number) => Promise<string>;
 	}
 }
 
@@ -119,15 +138,17 @@ self.onmessage = async (event: MessageEvent) => {
 			self.postMessage({ type: 'encrypt', success: false, error: (err as Error).message });
 		}
 	} else if (event.data.type === 'SessionKeypair') {
-		let payload = ""
+		let request_payload = ""
 		try {
 			const pubkeys = await self.SessionKeypair?.()
 			if (typeof pubkeys !== 'object') {
 				throw new Error("SessionKeypair did not return a valid result");
 			}
+
 			await storeSecret("session_soul", pubkeys.soul);
 			pubkeys.soul.fill(0);
-			payload = JSON.stringify({
+			
+			request_payload = JSON.stringify({
 				"client_ed_pubkey": pubkeys.ed_pubkey,
 				"client_x_pubkey": pubkeys.x_pubkey,
 				"client_x_pubkey_sign": pubkeys.x_pubkey_sign
@@ -142,12 +163,59 @@ self.onmessage = async (event: MessageEvent) => {
 				const result = await fetch(new URL("/session/init", await getBaseURL()), {
 					method: "POST",
 					headers,
-					body: payload
+					body: request_payload
 				})
 				if (!result.ok) {
 					throw new Error(`Failed to send session initialization: ${result.status} ${result.statusText}`);
 				}
-				self.postMessage({ type: 'SendSessionKeypair', success: result.ok, response: await result.json() });
+				
+				const response = await result.json();
+				if (response.status !== 'ok') {
+					throw new Error(`Session initialization failed: ${response.error || "Unknown error"}`);
+				}
+
+				self.postMessage({ type: 'SendSessionKeypair', success: result.ok, response });
+
+				/*
+				payload:"thRVlyYHOLaNMzuafpx4j3lwsQp9NBlu4yNyKj8-F9oQfkzpp..."
+				server_ed_pubkey:"ISj3sYGh5PGH8LRaJw-FhUMlzeliEtsDFNSmbEn3BXA"
+				server_x_pubkey:"ZCVEMmCbaj-Ib8lZy6XYCXEBNQv0z_CQdIigzfyncTc"
+				server_x_pubkey_sign:"-W91pm7WGtYvPB-04qZ3BmuqDY3QZs1oLL8s9v3OoNPYqkPTBqo04YqeR3yYM4Eo8DOLl7DCVZynHFzD7HjVBw"
+				session_id:"L_BIDIukbrwIVYEiReAHcK55Y4LHpO-7"
+				signature:"oRqUBQcisS3_BT-GmHXFZNh86a_qvA_vpcmY3ljVkR9SCM-dzgpaxDpPT3hpdfa91CZFyQKjuqPW0H6Gt5POCQ"
+				status:"ok"
+				*/
+				const { payload, server_ed_pubkey, server_x_pubkey, server_x_pubkey_sign, session_id, signature } = response;
+
+				if (typeof payload !== 'string' || typeof server_ed_pubkey !== 'string' || typeof server_x_pubkey !== 'string' || typeof server_x_pubkey_sign !== 'string' || typeof session_id !== 'string') {
+					throw new Error("Invalid PoW response: missing or invalid fields");
+				}
+
+				const server_ed_pubkey_bytes = decodeBase64Url(server_ed_pubkey);
+				const server_x_pubkey_bytes = decodeBase64Url(server_x_pubkey);
+				const server_x_pubkey_sign_bytes = decodeBase64Url(server_x_pubkey_sign);
+				const session_id_bytes = decodeBase64Url(session_id);
+				// const payload_bytes = new Uint8Array(decodeBase64Url(payload));
+				// const signature_bytes = new Uint8Array(decodeBase64Url(signature));
+
+				// console.log(server_ed_pubkey_bytes, server_x_pubkey_bytes, server_x_pubkey_sign_bytes, session_id_bytes, "---", signature_bytes);
+
+				await storeSecret("server_ed_pubkey", server_ed_pubkey_bytes);
+				await storeSecret("server_x_pubkey", server_x_pubkey_bytes);
+				await storeSecret("server_x_pubkey_sign", server_x_pubkey_sign_bytes);
+				await storeSecret("session_id", session_id_bytes);
+
+				const soul = await retrieveSecret("session_soul");
+				if (!soul) {
+					throw new Error("Session soul not found in vault");
+				}
+				
+				const deciphered_payload = await self.IntroduceServer?.(soul, server_ed_pubkey, server_x_pubkey, server_x_pubkey_sign, payload, signature);
+				// self.alert("Deciphering took " + (deciphered_payload as any).took_microseconds + " microseconds")
+
+				soul.fill(0);
+				
+				self.postMessage({ type: 'IntroduceServer', success: true, payload: deciphered_payload });
 			} catch (err) {
 				console.error('Error during sending session initialization:', err);
 				self.postMessage({ type: 'SendSessionKeypair', success: false, error: (err as Error).message });
@@ -169,6 +237,7 @@ self.onmessage = async (event: MessageEvent) => {
 			if (typeof result !== 'number') {
 				throw new Error("ComputePoW did not return a valid result");
 			}
+			
 			self.postMessage({ type: 'PoW', success: true, result });
 		} catch (err) {
 			console.error('Error during PoW computation:', err);

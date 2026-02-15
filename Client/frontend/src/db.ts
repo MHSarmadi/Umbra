@@ -98,17 +98,21 @@ async function createOrGetVaultKey(): Promise<CryptoKey> {
 		return key
 	}
 
-	key = await crypto.subtle.generateKey(
-		{
-			name: 'AES-GCM',
-			length: 256
-		},
-		false,                    // non-extractable
-		['encrypt', 'decrypt']
-	)
+	if (crypto && crypto.subtle) { 
+		key = await crypto.subtle.generateKey(
+			{
+				name: 'AES-GCM',
+				length: 256
+			},
+			false,                    // non-extractable
+			['encrypt', 'decrypt']
+		)
 
-	await saveVaultKey(key)
-	return key
+		await saveVaultKey(key)
+		return key
+	} else {
+		throw new Error("No Web Crypto Support by this device.")
+	}
 }
 
 // ────────────────────────────────────────────────
@@ -140,7 +144,7 @@ async function encryptSecret(
 async function decryptSecret(
 	payload: EncryptedPayload,
 	key: CryptoKey
-): Promise<Uint8Array> {
+): Promise<Uint8Array<ArrayBuffer>> {
 	const iv = new Uint8Array(payload.iv)
 	const ciphertext = new Uint8Array(payload.ciphertext)
 
@@ -185,7 +189,7 @@ export function useSecureVault() {
 		}
 	}
 
-	async function retrieveSecret(id: string): Promise<Uint8Array | null> {
+	async function retrieveSecret(id: string): Promise<Uint8Array<ArrayBuffer> | null> {
 		try {
 			const vaultKey = await loadVaultKey()
 			if (!vaultKey) {
