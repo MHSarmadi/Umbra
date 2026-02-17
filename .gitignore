@@ -1,5 +1,7 @@
 Server/data
 Server/data/*
+Logs/
+Server/Logs/
 Client/dist/*.wasm
 Client/dist/wasm_exec.js
 .vscode

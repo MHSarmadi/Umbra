@@ -2,12 +2,12 @@ package web
 
 import (
 	"context"
-	"log"
 	"net/http"
 	"time"
 
 	"github.com/MHSarmadi/Umbra/Server/controllers"
 	"github.com/MHSarmadi/Umbra/Server/database"
+	"github.com/MHSarmadi/Umbra/Server/logger"
 	"github.com/gorilla/mux"
 )
 
@@ -41,7 +41,7 @@ func LoggerMiddleware(next http.Handler) http.Handler {
 		start := time.Now()
 		next.ServeHTTP(w, r)
 		duration := time.Since(start)
-		log.Printf("%s %s from [%s] responded in %d microseconds", r.Method, r.RequestURI, r.RemoteAddr, duration.Microseconds())
+		logger.Debugf("%s %s from [%s] responded in %d microseconds", r.Method, r.RequestURI, r.RemoteAddr, duration.Microseconds())
 	})
 }
 

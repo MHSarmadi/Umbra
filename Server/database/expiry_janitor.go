@@ -3,9 +3,9 @@ package database
 import (
 	"context"
 	"encoding/json"
-	"log"
 	"time"
 
+	"github.com/MHSarmadi/Umbra/Server/logger"
 	"github.com/MHSarmadi/Umbra/Server/models"
 	"github.com/dgraph-io/badger/v4"
 )
@@ -17,9 +17,9 @@ func (s *BadgerStore) StartExpiryJanitor(ctx context.Context, sweepInterval time
 
 	// Sweep immediately on startup so restarts clean stale data.
 	if removedSessions, removedTrackers, err := s.SweepExpired(ctx, time.Now().UTC()); err != nil {
-		log.Printf("expiry janitor initial sweep error: %v", err)
+		logger.Errorf("expiry janitor initial sweep error: %v", err)
 	} else {
-		log.Printf("expiry janitor initial sweep removed sessions=%d trackers=%d", removedSessions, removedTrackers)
+		logger.Infof("expiry janitor initial sweep removed sessions=%d trackers=%d", removedSessions, removedTrackers)
 	}
 
 	ticker := time.NewTicker(sweepInterval)
@@ -32,11 +32,11 @@ func (s *BadgerStore) StartExpiryJanitor(ctx context.Context, sweepInterval time
 		case t := <-ticker.C:
 			removedSessions, removedTrackers, err := s.SweepExpired(ctx, t.UTC())
 			if err != nil {
-				log.Printf("expiry janitor sweep error: %v", err)
+				logger.Errorf("expiry janitor sweep error: %v", err)
 				continue
 			}
 			if removedSessions > 0 || removedTrackers > 0 {
-				log.Printf("expiry janitor removed sessions=%d trackers=%d", removedSessions, removedTrackers)
+				logger.Infof("expiry janitor removed sessions=%d trackers=%d", removedSessions, removedTrackers)
 			}
 		}
 	}

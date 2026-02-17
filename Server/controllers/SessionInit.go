@@ -14,6 +14,7 @@ import (
 
 	"github.com/MHSarmadi/Umbra/Server/captcha"
 	"github.com/MHSarmadi/Umbra/Server/crypto"
+	"github.com/MHSarmadi/Umbra/Server/logger"
 	math_tools "github.com/MHSarmadi/Umbra/Server/math"
 	"github.com/MHSarmadi/Umbra/Server/models"
 	models_requests "github.com/MHSarmadi/Umbra/Server/models/requests"
@@ -133,15 +134,18 @@ func (c *Controller) SessionInit(w http.ResponseWriter, r *http.Request) {
 			sessionInitTrackerTTL,
 		)
 		if err != nil {
+			logger.Errorf("session init tracker update failed for identity=%s: %v", trackerID, err)
 			http.Error(w, "could not update session-init tracker", http.StatusInternalServerError)
 			return
 		}
 		if limited {
+			logger.Infof("session init rate-limited for identity=%s retry_after=%ds", trackerID, int64(retryAfter.Seconds()))
 			w.Header().Set("Retry-After", strconv.FormatInt(int64(retryAfter.Seconds()), 10))
 			http.Error(w, "too many session initialization requests", http.StatusTooManyRequests)
 			return
 		}
 		powIterations := dynamicPoWIterations(requestCount)
+		logger.Debugf("session init identity=%s request_count=%d pow_iterations=%d", trackerID, requestCount, powIterations)
 
 		if len(body_decoded.ClientEdPubKey) != 32 || len(body_decoded.ClientXPubKey) != 32 {
 			http.Error(w, "invalid ed-pubkey or x-pubkey", http.StatusBadRequest)
