@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"time"
@@ -18,12 +20,15 @@ func main() {
 	}
 	defer s.Close()
 
-	mainCtx := context.Background()
+	mainCtx, cancelMain := context.WithCancel(context.Background())
+	defer cancelMain()
+
+	go s.StartExpiryJanitor(mainCtx, 1*time.Minute)
 
 	srv := web.NewServer(mainCtx, "localhost:8888", s)
 
 	go func() {
-		if err := srv.Run(); err != nil {
+		if err := srv.Run(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Fatalf("server could not start: %v", err)
 		}
 	}()
@@ -31,8 +36,9 @@ func main() {
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, os.Interrupt)
 	<-quit
+	cancelMain()
 
-	ctx, cancel := context.WithTimeout(mainCtx, 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	if err := srv.ShutDown(ctx); err != nil {

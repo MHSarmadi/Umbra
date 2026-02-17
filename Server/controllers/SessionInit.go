@@ -5,7 +5,11 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
+	"math"
+	"net"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/MHSarmadi/Umbra/Server/captcha"
@@ -17,10 +21,78 @@ import (
 
 const Expiry_Offset = 300 * time.Second
 
+const (
+	sessionInitWindow             = 10 * time.Minute
+	sessionInitMaxRequestsPerWind = 32
+	sessionInitTrackerTTL         = 30 * time.Minute
+	trustForwardedIdentityHeaders = false
+
+	powChallengeSize = 1
+	powMemoryMB      = 12
+	powParallelism   = 1
+	powIterationsMin = 2
+	powIterationsMax = 7
+)
+
 var (
 	b64url  = base64.RawURLEncoding.EncodeToString
 	db64url = base64.RawURLEncoding.DecodeString
 )
+
+func sessionInitIdentityHash(r *http.Request) string {
+	identityRaw := clientIP(r)
+	sum := crypto.Sum([]byte(identityRaw))
+	return b64url(sum[:16])
+}
+
+func clientIP(r *http.Request) string {
+	if trustForwardedIdentityHeaders {
+		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+			parts := strings.Split(xff, ",")
+			first := strings.TrimSpace(parts[0])
+			if first != "" {
+				return first
+			}
+		}
+		if xrip := strings.TrimSpace(r.Header.Get("X-Real-IP")); xrip != "" {
+			return xrip
+		}
+	}
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err == nil && host != "" {
+		return host
+	}
+	return r.RemoteAddr
+}
+
+func dynamicPoWIterations(requestCount int) uint {
+	if requestCount < 1 {
+		requestCount = 1
+	}
+	density := float64(requestCount) / float64(sessionInitMaxRequestsPerWind)
+	if density > 1 {
+		density = 1
+	}
+
+	// Logistic curve normalized to [0,1] over density range [0,1].
+	const k float64 = 10.0
+	const mid float64 = 0.55
+	raw := 1.0 / (1.0 + math.Exp(-k*(density-mid)))
+	lo := 1.0 / (1.0 + math.Exp(-k*(0-mid)))
+	hi := 1.0 / (1.0 + math.Exp(-k*(1-mid)))
+	normalized := (raw - lo) / (hi - lo)
+
+	span := float64(powIterationsMax - powIterationsMin)
+	it := float64(powIterationsMin) + normalized*span
+	rounded := uint(math.Round(it))
+	if rounded < powIterationsMin {
+		return powIterationsMin
+	}
+	if rounded > powIterationsMax {
+		return powIterationsMax
+	}
+	return rounded
+}
 
 func (c *Controller) SessionInit(w http.ResponseWriter, r *http.Request) {
 	var (
@@ -28,7 +100,10 @@ func (c *Controller) SessionInit(w http.ResponseWriter, r *http.Request) {
 		body_encoded models_requests.SessionInitRequestEncoded
 		body_decoded models_requests.SessionInitRequestDecoded
 	)
-	json.NewDecoder(r.Body).Decode(&body_encoded)
+	if err := json.NewDecoder(r.Body).Decode(&body_encoded); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
 
 	if body_decoded.ClientEdPubKey, err = db64url(body_encoded.ClientEdPubKey); err != nil {
 		http.Error(w, "invalid client_ed_pubkey base64url encoding", http.StatusBadRequest)
@@ -47,6 +122,27 @@ func (c *Controller) SessionInit(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid signature over client_x_pubkey", http.StatusBadRequest)
 		return
 	} else {
+		now := time.Now().UTC()
+		trackerID := sessionInitIdentityHash(r)
+		requestCount, limited, retryAfter, err := c.storage.RegisterSessionInitRequest(
+			c.ctx,
+			trackerID,
+			now,
+			sessionInitWindow,
+			sessionInitMaxRequestsPerWind,
+			sessionInitTrackerTTL,
+		)
+		if err != nil {
+			http.Error(w, "could not update session-init tracker", http.StatusInternalServerError)
+			return
+		}
+		if limited {
+			w.Header().Set("Retry-After", strconv.FormatInt(int64(retryAfter.Seconds()), 10))
+			http.Error(w, "too many session initialization requests", http.StatusTooManyRequests)
+			return
+		}
+		powIterations := dynamicPoWIterations(requestCount)
+
 		if len(body_decoded.ClientEdPubKey) != 32 || len(body_decoded.ClientXPubKey) != 32 {
 			http.Error(w, "invalid ed-pubkey or x-pubkey", http.StatusBadRequest)
 			return
@@ -71,15 +167,15 @@ func (c *Controller) SessionInit(w http.ResponseWriter, r *http.Request) {
 		}
 		server_x_pubkey_sign := crypto.Sign(server_soul[:], server_x_pubkey)
 
-		var pow_challenge [1]byte
+		var pow_challenge [powChallengeSize]byte
 		if _, err := rand.Read(pow_challenge[:]); err != nil {
 			http.Error(w, "could not read entropy", http.StatusInternalServerError)
 			return
 		}
 		pow_params := models.PowParamsType{
-			MemoryMB:    12,
-			Iterations:  6,
-			Parallelism: 1,
+			MemoryMB:    powMemoryMB,
+			Iterations:  powIterations,
+			Parallelism: powParallelism,
 		}
 		var pow_salt [12]byte
 		if _, err := rand.Read(pow_salt[:]); err != nil {
@@ -98,6 +194,7 @@ func (c *Controller) SessionInit(w http.ResponseWriter, r *http.Request) {
 		captcha_png, err := captcha.GenerateNumericCaptcha(captcha_solution)
 		if err != nil {
 			http.Error(w, "could not draw captcha", http.StatusInternalServerError)
+			return
 		}
 
 		var session_token [24]byte
@@ -110,8 +207,8 @@ func (c *Controller) SessionInit(w http.ResponseWriter, r *http.Request) {
 		session := models.Session{
 			UUID: session_id,
 
-			CreatedAt: time.Now().UTC(),
-			ExpiresAt: time.Now().Add(Expiry_Offset).UTC(),
+			CreatedAt: now,
+			ExpiresAt: now.Add(Expiry_Offset).UTC(),
 
 			ClientEdPubKey: [32]byte(body_decoded.ClientEdPubKey),
 			ClientXPubKey:  [32]byte(body_decoded.ClientXPubKey),
