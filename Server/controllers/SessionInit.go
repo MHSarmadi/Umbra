@@ -96,33 +96,49 @@ func dynamicPoWIterations(requestCount int) uint {
 }
 
 func (c *Controller) SessionInit(w http.ResponseWriter, r *http.Request) {
+	reqStart := time.Now()
+	logger.Verbosef("session init started method=%s path=%s remote=%s", r.Method, r.URL.Path, r.RemoteAddr)
+
 	var (
 		err          error
 		body_encoded models_requests.SessionInitRequestEncoded
 		body_decoded models_requests.SessionInitRequestDecoded
 	)
 	if err := json.NewDecoder(r.Body).Decode(&body_encoded); err != nil {
+		logger.Debugf("session init rejected: malformed json body remote=%s err=%v", r.RemoteAddr, err)
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
 
+	logger.Tracef(
+		"session init payload field lengths (base64url chars): ed=%d x=%d sign=%d",
+		len(body_encoded.ClientEdPubKey),
+		len(body_encoded.ClientXPubKey),
+		len(body_encoded.ClientXPubKeySignature),
+	)
 	if body_decoded.ClientEdPubKey, err = db64url(body_encoded.ClientEdPubKey); err != nil {
+		logger.Debugf("session init rejected: invalid client_ed_pubkey encoding err=%v", err)
 		http.Error(w, "invalid client_ed_pubkey base64url encoding", http.StatusBadRequest)
 		return
 	} else if body_decoded.ClientXPubKey, err = db64url(body_encoded.ClientXPubKey); err != nil {
+		logger.Debugf("session init rejected: invalid client_x_pubkey encoding err=%v", err)
 		http.Error(w, "invalid client_x_pubkey base64url encoding", http.StatusBadRequest)
 		return
 	} else if body_decoded.ClientXPubKeySignature, err = db64url(body_encoded.ClientXPubKeySignature); err != nil {
+		logger.Debugf("session init rejected: invalid client_x_pubkey_sign encoding err=%v", err)
 		http.Error(w, "invalid client_x_pubkey_sign base64url encoding", http.StatusBadRequest)
 		return
 	} else if len(body_decoded.ClientEdPubKey) != 32 || len(body_decoded.ClientXPubKey) != 32 {
 		// Check lengths BEFORE calling Verify
+		logger.Debugf("session init rejected: invalid pubkey lengths ed=%d x=%d", len(body_decoded.ClientEdPubKey), len(body_decoded.ClientXPubKey))
 		http.Error(w, "invalid ed-pubkey or x-pubkey length", http.StatusBadRequest)
 		return
 	} else if crypto.Verify(body_decoded.ClientEdPubKey, body_decoded.ClientXPubKey, body_decoded.ClientXPubKeySignature) == false {
+		logger.Debugf("session init rejected: client signature verification failed")
 		http.Error(w, "invalid signature over client_x_pubkey", http.StatusBadRequest)
 		return
 	} else {
+		logger.Tracef("session init: client cryptographic identity verified")
 		now := time.Now().UTC()
 		trackerID := sessionInitIdentityHash(r)
 		requestCount, limited, retryAfter, err := c.storage.RegisterSessionInitRequest(
@@ -148,31 +164,38 @@ func (c *Controller) SessionInit(w http.ResponseWriter, r *http.Request) {
 		logger.Debugf("session init identity=%s request_count=%d pow_iterations=%d", trackerID, requestCount, powIterations)
 
 		if len(body_decoded.ClientEdPubKey) != 32 || len(body_decoded.ClientXPubKey) != 32 {
+			logger.Errorf("session init internal invariant failed: pubkey lengths changed ed=%d x=%d", len(body_decoded.ClientEdPubKey), len(body_decoded.ClientXPubKey))
 			http.Error(w, "invalid ed-pubkey or x-pubkey", http.StatusBadRequest)
 			return
 		}
 		var session_id [24]byte
 		if _, err := rand.Read(session_id[:]); err != nil {
+			logger.Errorf("session init entropy read failed for session id: %v", err)
 			http.Error(w, "could not read entropy", http.StatusInternalServerError)
 			return
 		}
 
 		var server_soul [32]byte
 		if _, err := rand.Read(server_soul[:]); err != nil {
+			logger.Errorf("session init entropy read failed for server soul: %v", err)
 			http.Error(w, "could not read entropy", http.StatusInternalServerError)
 			return
 		}
 
+		deriveStart := time.Now()
 		server_ed_pubkey := crypto.DeriveEd25519PubKey(server_soul[:])
 		server_x_pubkey, err := crypto.DeriveX25519PubKey(server_soul[:])
 		if err != nil {
+			logger.Errorf("session init failed deriving server x25519 pubkey: %v", err)
 			http.Error(w, "could not derive pubkey", http.StatusInternalServerError)
 			return
 		}
 		server_x_pubkey_sign := crypto.Sign(server_soul[:], server_x_pubkey)
+		logger.Tracef("session init: server key derivation/sign complete in %d microseconds", time.Since(deriveStart).Microseconds())
 
 		var pow_challenge [powChallengeSize]byte
 		if _, err := rand.Read(pow_challenge[:]); err != nil {
+			logger.Errorf("session init entropy read failed for pow challenge: %v", err)
 			http.Error(w, "could not read entropy", http.StatusInternalServerError)
 			return
 		}
@@ -183,9 +206,11 @@ func (c *Controller) SessionInit(w http.ResponseWriter, r *http.Request) {
 		}
 		var pow_salt [12]byte
 		if _, err := rand.Read(pow_salt[:]); err != nil {
+			logger.Errorf("session init entropy read failed for pow salt: %v", err)
 			http.Error(w, "could not read entropy", http.StatusInternalServerError)
 			return
 		}
+		logger.Verbosef("session init pow params memory_mb=%d iterations=%d parallelism=%d challenge_bytes=%d salt_bytes=%d", pow_params.MemoryMB, pow_params.Iterations, pow_params.Parallelism, len(pow_challenge), len(pow_salt))
 
 		captcha_solution := math_tools.RandomDecimalString(6)
 		var captcha_solution_numeric uint64 = 0
@@ -197,16 +222,20 @@ func (c *Controller) SessionInit(w http.ResponseWriter, r *http.Request) {
 		binary.BigEndian.PutUint64(captcha_solution_bytes, captcha_solution_numeric)
 		captcha_png, err := captcha.GenerateNumericCaptcha(captcha_solution)
 		if err != nil {
+			logger.Errorf("session init captcha generation failed: %v", err)
 			http.Error(w, "could not draw captcha", http.StatusInternalServerError)
 			return
 		}
+		logger.Tracef("session init captcha generated bytes=%d", len(captcha_png))
 
 		var session_token [24]byte
 		if _, err := rand.Read(session_token[:]); err != nil {
+			logger.Errorf("session init entropy read failed for session token: %v", err)
 			http.Error(w, "could not read entropy", http.StatusInternalServerError)
 			return
 		}
 		session_token_ciphered, session_token_salt := crypto.MACE_Encrypt(captcha_solution_bytes, session_token[:], "@SESSION-TOKEN", 2, false)
+		logger.Tracef("session init session-token encryption produced cipher_bytes=%d salt_bytes=%d", len(session_token_ciphered), len(session_token_salt))
 
 		session := models.Session{
 			UUID: session_id,
@@ -227,9 +256,11 @@ func (c *Controller) SessionInit(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if err := c.storage.PutSession(c.ctx, &session); err != nil {
+			logger.Errorf("session init failed persisting session identity=%s: %v", trackerID, err)
 			http.Error(w, "could not store seesion", http.StatusInternalServerError)
 			return
 		}
+		logger.Tracef("session init session persisted session_id_b64_len=%d", len(b64url(session.UUID[:])))
 
 		type SessionInitResponse struct {
 			Status                 string `json:"status"`
@@ -258,11 +289,14 @@ func (c *Controller) SessionInit(w http.ResponseWriter, r *http.Request) {
 		}
 		payload_encoded, err := json.Marshal(payload_raw)
 		if err != nil {
+			logger.Errorf("session init failed marshaling payload json: %v", err)
 			http.Error(w, "could not marshal to json", http.StatusInternalServerError)
 			return
 		}
+		logger.Tracef("session init payload marshaled bytes=%d", len(payload_encoded))
 		shared_secret, err := crypto.ComputeSharedSecret(server_soul[:], body_decoded.ClientXPubKey)
 		if err != nil {
+			logger.Errorf("session init failed computing shared secret: %v", err)
 			http.Error(w, "could not compute shared secret", http.StatusInternalServerError)
 			return
 		}
@@ -271,6 +305,7 @@ func (c *Controller) SessionInit(w http.ResponseWriter, r *http.Request) {
 		payload := append(payload_salt, payload_tag...)
 		payload = append(payload, payload_ciphered...) // payload_salt is always exactly 12 bytes and payload_tag is always exactly 16 bytes
 		signature := crypto.Sign(server_soul[:], payload)
+		logger.Tracef("session init response cryptography complete payload_bytes=%d signature_bytes=%d", len(payload), len(signature))
 
 		response := SessionInitResponse{
 			Status:                 "ok",
@@ -284,6 +319,10 @@ func (c *Controller) SessionInit(w http.ResponseWriter, r *http.Request) {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(response)
+		if err := json.NewEncoder(w).Encode(response); err != nil {
+			logger.Errorf("session init response encode failed: %v", err)
+			return
+		}
+		logger.Verbosef("session init completed identity=%s duration_ms=%d", trackerID, time.Since(reqStart).Milliseconds())
 	}
 }

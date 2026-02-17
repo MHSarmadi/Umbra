@@ -13,12 +13,14 @@ import (
 // LogVerbosity controls which logs are emitted.
 // 0 = production silent mode (no logs).
 // Higher values enable more logs.
-const LogVerbosity uint8 = 3
+const LogVerbosity uint8 = 5
 
 const (
 	LevelError uint8 = 1
 	LevelInfo  uint8 = 2
 	LevelDebug uint8 = 3
+	LevelVerb  uint8 = 4
+	LevelTrace uint8 = 5
 )
 
 var (
@@ -142,4 +144,12 @@ func Infof(format string, args ...any) {
 
 func Debugf(format string, args ...any) {
 	logf(LevelDebug, "DEBUG", format, args...)
+}
+
+func Verbosef(format string, args ...any) {
+	logf(LevelVerb, "VERBOSE", format, args...)
+}
+
+func Tracef(format string, args ...any) {
+	logf(LevelTrace, "TRACE", format, args...)
 }
