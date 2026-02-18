@@ -320,6 +320,6 @@ func (c *Controller) SessionInit(w http.ResponseWriter, r *http.Request) {
 			logger.Errorf("session init response encode failed: %v", err)
 			return
 		}
-		logger.Verbosef("session init completed identity=%s duration_ms=%d", trackerID, time.Since(reqStart).Milliseconds())
+		logger.Verbosef("session init completed identity=\"%s\" duration_ms=%d", trackerID, time.Since(reqStart).Milliseconds())
 	}
 }

@@ -22,5 +22,8 @@ func buildRouter(ctx context.Context, storage *database.BadgerStore) *mux.Router
 	// === SESSION ===
 	r.HandleFunc("/session/init", c.SessionInit).Methods("POST")
 
+	// === WS ===
+	r.HandleFunc("/ws", c.WS).Methods("GET")
+
 	return r
 }
