@@ -99,43 +99,6 @@ self.onmessage = async (event: MessageEvent) => {
 			console.error('Error setting base URL:', err);
 			self.postMessage({ type: 'setBaseURL', success: false, error: (err as Error).message });
 		}
-	} else if (event.data.type === 'encrypt') {
-		try {
-			const { key, data, context, difficulty } = event.data.payload as {
-				key?: Uint8Array,
-				data?: Uint8Array,
-				context?: string,
-				difficulty?: number
-			};
-			if (!key || !(key instanceof Uint8Array)) {
-				throw new Error("Invalid key: must be a Uint8Array");
-			}
-			if (!data || !(data instanceof Uint8Array)) {
-				throw new Error("Invalid data: must be a Uint8Array");
-			}
-			if (typeof context !== 'string') {
-				throw new Error("Invalid context: must be a string");
-			}
-			if (typeof difficulty !== 'number' || difficulty < 0) {
-				throw new Error("Invalid difficulty: must be a non-negative number");
-			}
-			const result = (globalThis as any).MACE_Encrypt(key, data, context, difficulty);
-			if (!result || !(result.cipher instanceof Uint8Array) || !(result.salt instanceof Uint8Array)) {
-				throw new Error("MACE_Encrypt did not return valid result");
-			}
-			self.postMessage({
-				type: 'encrypt',
-				success: true,
-				cipher: result.cipher.buffer,
-				salt: result.salt.buffer
-			}, [
-				result.cipher.buffer,
-				result.salt.buffer
-			]);
-		} catch (err) {
-			console.error('Error during encryption:', err);
-			self.postMessage({ type: 'encrypt', success: false, error: (err as Error).message });
-		}
 	} else if (event.data.type === 'SessionKeypair') {
 		let request_payload = ""
 		try {
