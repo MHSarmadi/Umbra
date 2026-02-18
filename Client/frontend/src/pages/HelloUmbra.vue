@@ -61,6 +61,7 @@ workerRouter.value['IntroduceServer'] = (event: MessageEvent) => {
 	}
 	if (event.data.success) {
 		current_step.value = 2;
+		console.log("Server introduced successfully:", event.data.payload);
 		captcha_challenge_image.value = `data:image/png;base64,${event.data.payload.captcha_challenge}`
 		pow_id.value = Math.floor(Math.random() * 36 ** 8).toString(36); // Generate random ID for this proof of work session
 		const challenge = decodeBase64(event.data.payload.pow_challenge), salt = decodeBase64(event.data.payload.pow_salt)
@@ -98,6 +99,20 @@ workerRouter.value['PoW'] = (event: MessageEvent) => {
 	}
 }
 
+workerRouter.value['CheckoutCaptcha'] = (event: MessageEvent) => {
+	if (!current_step.value || current_step.value < 2) {
+		console.warn("Not in the right step for Checking out the CAPTCHA. Ignoring.");
+		return;
+	}
+	if (event.data.success) {
+		alert("checked out!");
+	} else if (event.data.error !== 'Wrong captcha solution') {
+		console.error("Decrypting the Session Token failed:", event.data.error);
+	} else {
+		alert("wrong captcha!");
+	}
+}
+
 const previous_pow_progress_function = progressPercentages.value['pow'];
 progressPercentages.value['pow'] = (id: string) => {
 	if (id !== pow_id.value) {
@@ -118,12 +133,10 @@ function onCaptchaCheckout(value: string | number) {
 		alert("Please enter a valid 6-digit numeric code from the CAPTCHA challenge.");
 		return;
 	}
-	// wasmWorker.postMessage({
-	// 	type: 'CaptchaResponse',
-	// 	captcha_response: value,
-	// 	pow_id: pow_id.value
-	// });
-	alert("checked-out.");
+	wasmWorker.postMessage({
+		type: 'CheckoutCaptcha',
+		captcha_response: value
+	});
 }
 
 function goto_session() {
@@ -243,7 +256,6 @@ function goto_session() {
 			<br/><br/>
 			Please wait while we ensure that your communication will be private and secure.
 		</p>
-		<br/>
 		<ul class="steps">
 			<li :class="`${current_step! > 0 ? 'done' : ((step_failed && current_step == 0) ? 'failed' : (!step_failed ? 'loading' : ''))}${current_step == 0 ? ' active' : ''}`">Generating session key pairs...</li>
 			<li :class="`${current_step! > 1 ? 'done' : ((step_failed && current_step == 1) ? 'failed' : (!step_failed ? 'loading' : ''))}${current_step == 1 ? ' active' : ''}`">Executing first handshake with the server...</li>
@@ -256,7 +268,7 @@ function goto_session() {
 		<div v-if="current_step! >= 2" style="display: flex; flex-direction: column; align-items: center; gap: 10px;">
 			<p>Meanwhile, please solve the CAPTCHA below to additionally prove you are a human:</p>
 			<img :src="captcha_challenge_image" alt="CAPTCHA Challenge" style="width: 350px; margin-top: 10px; border-radius: var(--border-radius-md); pointer-events: none; user-select: none;" @contextmenu.prevent="" @drag.prevent="" @dragstart.prevent="" />
-			<input-field v-model="captcha_input" inputmode="numeric" :maxlength="6" style="width: 350px;" label="What's written in the box?" :checkoutable="captcha_input.length == 6" @checkout="onCaptchaCheckout" />
+			<input-field v-model="captcha_input" inputmode="numeric" :maxlength="6" style="width: 350px;" label="What's written in the box?" :checkoutable="captcha_input.length == 6" @checkout="onCaptchaCheckout(captcha_input)" />
 		</div>
 		<p v-if="step_failed" class="failure-message">
 			{{ failure_message || 'Session initialization failed. Please refresh the page and try again.' }}

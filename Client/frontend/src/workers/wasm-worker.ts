@@ -49,6 +49,7 @@ declare global {
 			payload: string,
 			signature: string,
 		) => Promise<{
+			session_id: string,
 			captcha_challenge: string,
 			pow_challenge: string,
 			pow_salt: string,
@@ -59,9 +60,14 @@ declare global {
 			},
 			session_token_ciphered: string
 		}>;
+
 		// expected args: progress_id, challenge, salt, memory_mb, iterations, parallelism
 		// return: Promise<error|number>
 		ComputePoW?: (progress_id: string, challenge: Uint8Array<ArrayBuffer>, salt: Uint8Array<ArrayBuffer>, memory_mb: number, iterations: number, parallelism: number) => Promise<string>;
+		
+		// expected args: captcha_challenge_numeric, session_token_ciphered, session_id
+		// return: Promise<string> which is the decipehred session_token
+		CheckoutCaptcha?: (captcha_solution_numeric: number, session_token_ciphered: Uint8Array<ArrayBuffer>, session_id: Uint8Array<ArrayBuffer>) => Promise<string>;
 	}
 }
 
@@ -83,7 +89,7 @@ self.onmessage = async (event: MessageEvent) => {
 		} catch (err) {
 			console.error('Error initializing WASM module:', err);
 			if (event.data.type === 'init') {
-				self.postMessage({ type: 'init', success: false, error: (err as Error).message });
+				self.postMessage({ type: 'init', success: false, error: err });
 			}
 			return;
 		}
@@ -97,7 +103,7 @@ self.onmessage = async (event: MessageEvent) => {
 			self.postMessage({ type: 'setBaseURL', success: true, url: baseURL.toString() });
 		} catch (err) {
 			console.error('Error setting base URL:', err);
-			self.postMessage({ type: 'setBaseURL', success: false, error: (err as Error).message });
+			self.postMessage({ type: 'setBaseURL', success: false, error: err });
 		}
 	} else if (event.data.type === 'SessionKeypair') {
 		let request_payload = ""
@@ -140,21 +146,19 @@ self.onmessage = async (event: MessageEvent) => {
 
 				self.postMessage({ type: 'SendSessionKeypair', success: result.ok, response });
 
-				const { payload, server_ed_pubkey, server_x_pubkey, server_x_pubkey_sign, session_id, signature } = response;
+				const { payload, server_ed_pubkey, server_x_pubkey, server_x_pubkey_sign, signature } = response;
 
-				if (typeof payload !== 'string' || typeof server_ed_pubkey !== 'string' || typeof server_x_pubkey !== 'string' || typeof server_x_pubkey_sign !== 'string' || typeof session_id !== 'string') {
+				if (typeof payload !== 'string' || typeof server_ed_pubkey !== 'string' || typeof server_x_pubkey !== 'string' || typeof server_x_pubkey_sign !== 'string' || typeof signature !== 'string') {
 					throw new Error("Invalid PoW response: missing or invalid fields");
 				}
 
 				const server_ed_pubkey_bytes = decodeBase64(server_ed_pubkey);
 				const server_x_pubkey_bytes = decodeBase64(server_x_pubkey);
 				const server_x_pubkey_sign_bytes = decodeBase64(server_x_pubkey_sign);
-				const session_id_bytes = decodeBase64(session_id);
 
 				await storeSecret("server_ed_pubkey", server_ed_pubkey_bytes);
 				await storeSecret("server_x_pubkey", server_x_pubkey_bytes);
 				await storeSecret("server_x_pubkey_sign", server_x_pubkey_sign_bytes);
-				await storeSecret("session_id", session_id_bytes);
 
 				const soul = await retrieveSecret("session_soul");
 				if (!soul) {
@@ -165,34 +169,78 @@ self.onmessage = async (event: MessageEvent) => {
 
 				// Remove sensitive data from memory
 				soul.fill(0);
-				
+
+				if (!deciphered_payload || typeof deciphered_payload !== 'object' || !('session_token_ciphered' in deciphered_payload)) {
+					throw new Error("IntroduceServer did not return a valid session token ciphered");
+				}
+
+				await storeSecret("session_token_ciphered", decodeBase64(deciphered_payload.session_token_ciphered));
+				await storeSecret("session_id", decodeBase64(deciphered_payload.session_id));
+
+				deciphered_payload.session_token_ciphered = "";
+				deciphered_payload.session_id = "";
+
 				self.postMessage({ type: 'IntroduceServer', success: true, payload: deciphered_payload });
 			} catch (err) {
 				console.error('Error during sending session initialization:', err);
-				self.postMessage({ type: 'SendSessionKeypair', success: false, error: (err as Error).message });
+				self.postMessage({ type: 'SendSessionKeypair', success: false, error: err });
 			}
 		} catch (err) {
 			console.error('Error during session key pair generation:', err);
-			self.postMessage({ type: 'SessionKeypair', success: false, error: (err as Error).message });
+			self.postMessage({ type: 'SessionKeypair', success: false, error: err });
 		}
 	} else if (event.data.type === 'PoW') {
-		try {
-			const result = await self.ComputePoW?.(
-				event.data.progress_id,
-				new Uint8Array(event.data.challenge),
-				new Uint8Array(event.data.salt),
-				event.data.memory_mb,
-				event.data.iterations,
-				event.data.parallelism
-			);
+		self.ComputePoW?.(
+			event.data.progress_id,
+			new Uint8Array(event.data.challenge),
+			new Uint8Array(event.data.salt),
+			event.data.memory_mb,
+			event.data.iterations,
+			event.data.parallelism
+		)?.then((result: string) => {;
 			if (typeof result !== 'number') {
 				throw new Error("ComputePoW did not return a valid result");
 			}
 			
 			self.postMessage({ type: 'PoW', success: true, result });
-		} catch (err) {
+		})?.catch((err: Error) => {
 			console.error('Error during PoW computation:', err);
-			self.postMessage({ type: 'PoW', success: false, error: (err as Error).message });
+			self.postMessage({ type: 'PoW', success: false, error: err.message });
+		});
+	} else if (event.data.type === 'CheckoutCaptcha') {
+		const { captcha_response } = event.data;
+		if (typeof captcha_response !== 'string' || captcha_response.length !== 6 || !/^\d{6}$/.test(captcha_response)) {
+			console.warn("Invalid CAPTCHA response:", captcha_response);
+			self.postMessage({ type: 'CheckoutCaptcha', success: false, error: "Invalid CAPTCHA response" });
+			return;
+		}
+		const captcha_response_numeric = parseInt(captcha_response);
+
+		try {
+			const session_token_ciphered = await retrieveSecret("session_token_ciphered");
+			if (!session_token_ciphered) {
+				throw new Error("Session token ciphered not found in vault");
+			}
+			const session_id = await retrieveSecret("session_id");
+			if (!session_id) {
+				throw new Error("Session ID not found in vault");
+			}
+
+			// Decipher Session Token
+			const session_token = await self.CheckoutCaptcha?.(captcha_response_numeric, session_token_ciphered, session_id);
+			if (typeof session_token !== 'string') {
+				throw new Error("CheckoutCaptcha did not return a valid session token");
+			}
+
+			console.log(session_token)
+
+			await storeSecret("session_token", decodeBase64(session_token))
+			
+			self.postMessage({ type: 'CheckoutCaptcha', success: true });
+		} catch (err) {
+			console.error('Error retrieving session token ciphered:', err);
+			self.postMessage({ type: 'CheckoutCaptcha', success: false, error: err });
+			return;
 		}
 	} else {
 		console.warn('Unknown message type:', event.data.type);

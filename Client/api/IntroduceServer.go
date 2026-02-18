@@ -118,6 +118,7 @@ func IntroduceServer() {
 
 				// 4. parse JSON
 				type SessionInitRawPayload struct {
+					SessionUUID      string         `json:"session_id"`
 					CaptchaChallenge string         `json:"captcha_challenge"`
 					PoWChallenge     string         `json:"pow_challenge"`
 					PowParams        map[string]any `json:"pow_params"`
@@ -132,6 +133,7 @@ func IntroduceServer() {
 
 				// 5. resolve results
 				result := js.Global().Get("Object").New()
+				result.Set("session_id", payloadData.SessionUUID)
 				result.Set("captcha_challenge", payloadData.CaptchaChallenge)
 				result.Set("pow_challenge", payloadData.PoWChallenge)
 				result.Set("pow_params", payloadData.PowParams)

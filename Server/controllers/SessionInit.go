@@ -233,7 +233,7 @@ func (c *Controller) SessionInit(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "could not read entropy", http.StatusInternalServerError)
 			return
 		}
-		session_token_ciphered, session_token_salt, session_token_tag := crypto.MACE_Encrypt_AEAD(captcha_solution_bytes, session_token[:], "@SESSION-TOKEN", 2, false)
+		session_token_ciphered, session_token_salt, session_token_tag := crypto.MACE_Encrypt_MIXIN_AEAD(captcha_solution_bytes, session_token[:], session_id[:], "@SESSION-TOKEN", 2, false)
 		logger.Tracef("session init session-token encryption produced cipher_bytes=%d salt_bytes=%d tag_bytes=%d", len(session_token_ciphered), len(session_token_salt), len(session_token_tag))
 
 		session_token_ciphered_pack := append(session_token_salt, session_token_tag...)
@@ -266,7 +266,6 @@ func (c *Controller) SessionInit(w http.ResponseWriter, r *http.Request) {
 
 		type SessionInitResponse struct {
 			Status                 string `json:"status"`
-			SessionUUID            string `json:"session_id"`
 			ServerEdPubKey         string `json:"server_ed_pubkey"`
 			ServerXPubKey          string `json:"server_x_pubkey"`
 			ServerXPubKeySignature string `json:"server_x_pubkey_sign"`
@@ -274,6 +273,7 @@ func (c *Controller) SessionInit(w http.ResponseWriter, r *http.Request) {
 			Signature              string `json:"signature"`
 		}
 		type SessionInitRawPayload struct {
+			SessionUUID      string               `json:"session_id"`
 			CaptchaChallenge string               `json:"captcha_challenge"`
 			PoWChallenge     string               `json:"pow_challenge"`
 			PowParams        models.PowParamsType `json:"pow_params"`
@@ -282,6 +282,7 @@ func (c *Controller) SessionInit(w http.ResponseWriter, r *http.Request) {
 		}
 
 		payload_raw := SessionInitRawPayload{
+			SessionUUID:      b64(session.UUID[:]),
 			PoWChallenge:     b64(session.PoWChallenge[:]),
 			PowParams:        session.PoWParams,
 			PoWSalt:          b64(session.PoWSalt[:]),
@@ -310,7 +311,6 @@ func (c *Controller) SessionInit(w http.ResponseWriter, r *http.Request) {
 
 		response := SessionInitResponse{
 			Status:                 "ok",
-			SessionUUID:            b64(session.UUID[:]),
 			ServerEdPubKey:         b64(server_ed_pubkey),
 			ServerXPubKey:          b64(server_x_pubkey),
 			ServerXPubKeySignature: b64(server_x_pubkey_sign),

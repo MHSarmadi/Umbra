@@ -30,5 +30,7 @@ func main() {
 
 	api.ComputePoW(progressChan)
 
+	api.CheckoutCaptcha()
+
 	select {}
 }
