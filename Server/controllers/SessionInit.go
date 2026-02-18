@@ -233,8 +233,11 @@ func (c *Controller) SessionInit(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "could not read entropy", http.StatusInternalServerError)
 			return
 		}
-		session_token_ciphered, session_token_salt := crypto.MACE_Encrypt(captcha_solution_bytes, session_token[:], "@SESSION-TOKEN", 2, false)
-		logger.Tracef("session init session-token encryption produced cipher_bytes=%d salt_bytes=%d", len(session_token_ciphered), len(session_token_salt))
+		session_token_ciphered, session_token_salt, session_token_tag := crypto.MACE_Encrypt_AEAD(captcha_solution_bytes, session_token[:], "@SESSION-TOKEN", 2, false)
+		logger.Tracef("session init session-token encryption produced cipher_bytes=%d salt_bytes=%d tag_bytes=%d", len(session_token_ciphered), len(session_token_salt), len(session_token_tag))
+
+		session_token_ciphered_pack := append(session_token_salt, session_token_tag...)
+		session_token_ciphered_pack = append(session_token_ciphered_pack, session_token_ciphered...) // session_token_salt is always exactly 12 bytes and session_token_tag is always exactly 16 bytes
 
 		session := models.Session{
 			UUID: session_id,
@@ -282,7 +285,7 @@ func (c *Controller) SessionInit(w http.ResponseWriter, r *http.Request) {
 			PoWChallenge:     b64(session.PoWChallenge[:]),
 			PowParams:        session.PoWParams,
 			PoWSalt:          b64(session.PoWSalt[:]),
-			SessionToken:     b64(append(session_token_salt, session_token_ciphered...)), // session_token_salt is always exactly 12 bytes
+			SessionToken:     b64(session_token_ciphered_pack),
 			CaptchaChallenge: b64(captcha_png),
 		}
 		payload_encoded, err := json.Marshal(payload_raw)

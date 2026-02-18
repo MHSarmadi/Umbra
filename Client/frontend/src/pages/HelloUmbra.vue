@@ -3,6 +3,7 @@ import { inject, ref, type Ref } from 'vue';
 import LargeButton from '../components/LargeButton.vue';
 import ProgressBar from '../components/ProgressBar.vue';
 import { decodeBase64 } from '../tools/base64';
+import InputField from '../components/InputField.vue';
 // import { useRouter } from 'vue-router';
 
 // const $router = useRouter();
@@ -23,6 +24,7 @@ const pow_percent = ref<number>(0);
 const pow_id = ref<string>('');
 
 const captcha_challenge_image = ref<string>('');
+const captcha_input = ref<string>('');
 
 workerRouter.value['SessionKeypair'] = (event: MessageEvent) => {
 	if (current_step.value !== 0 && event.data.success) {
@@ -45,7 +47,7 @@ workerRouter.value['SendSessionKeypair'] = (event: MessageEvent) => {
 		return; // Ignore if not in right step
 	}
 	if (event.data.success) {
-		console.log(event.data.response)
+
 	} else {
 		console.error('Failed to send session key pair:', event.data.error);
 		step_failed.value = true;
@@ -59,10 +61,8 @@ workerRouter.value['IntroduceServer'] = (event: MessageEvent) => {
 	}
 	if (event.data.success) {
 		current_step.value = 2;
-		console.log(event.data.payload);
 		captcha_challenge_image.value = `data:image/png;base64,${event.data.payload.captcha_challenge}`
 		pow_id.value = Math.floor(Math.random() * 36 ** 8).toString(36); // Generate random ID for this proof of work session
-		// console.log(event.data.payload.pow_salt)
 		const challenge = decodeBase64(event.data.payload.pow_challenge), salt = decodeBase64(event.data.payload.pow_salt)
 		wasmWorker.postMessage({
 			type: "PoW",
@@ -89,7 +89,6 @@ workerRouter.value['PoW'] = (event: MessageEvent) => {
 	}
 	if (event.data.success) {
 		// Session initialization complete, proceed to next page or functionality
-		console.log("Session initialization complete!");
 		console.log("PoW result:", event.data.result);
 		current_step.value = 3;
 	} else {
@@ -114,6 +113,18 @@ progressPercentages.value['pow'] = (id: string) => {
 	}
 }
 
+function onCaptchaCheckout(value: string | number) {
+	if (typeof value !== 'string' || value.length !== 6 || !/^\d+$/.test(value)) {
+		alert("Please enter a valid 6-digit numeric code from the CAPTCHA challenge.");
+		return;
+	}
+	// wasmWorker.postMessage({
+	// 	type: 'CaptchaResponse',
+	// 	captcha_response: value,
+	// 	pow_id: pow_id.value
+	// });
+	alert("checked-out.");
+}
 
 function goto_session() {
 	current_page.value = 'SessionInit';
@@ -231,18 +242,22 @@ function goto_session() {
 			Umbra is now setting up your secure session. This process may take a moment as we generate cryptographic keys and prove you are not a robot.
 			<br/><br/>
 			Please wait while we ensure that your communication will be private and secure.
-
 		</p>
 		<br/>
 		<ul class="steps">
 			<li :class="`${current_step! > 0 ? 'done' : ((step_failed && current_step == 0) ? 'failed' : (!step_failed ? 'loading' : ''))}${current_step == 0 ? ' active' : ''}`">Generating session key pairs...</li>
-			<li :class="`${current_step! > 1 ? 'done' : ((step_failed && current_step == 1) ? 'failed' : (!step_failed ? 'loading' : ''))}${current_step == 1 ? ' active' : ''}`">Sending request to the server...</li>
+			<li :class="`${current_step! > 1 ? 'done' : ((step_failed && current_step == 1) ? 'failed' : (!step_failed ? 'loading' : ''))}${current_step == 1 ? ' active' : ''}`">Executing first handshake with the server...</li>
 			<li :class="`${current_step! > 2 ? 'done' : ((step_failed && current_step == 2) ? 'failed' : (!step_failed ? 'loading' : ''))}${current_step == 2 ? ' active' : ''}`">
-				Proving that it's not a robot...
-				<!-- <span v-if="current_step == 2">({{ pow_percent }}%)</span> -->
+				Running quick anti-bot measures...	
 				<progress-bar v-if="current_step == 2" style="margin-left: 20px;" :percentage="pow_percent" size="large" />
 			</li>
 		</ul>
+		<hr v-if="current_step! >= 2"/>
+		<div v-if="current_step! >= 2" style="display: flex; flex-direction: column; align-items: center; gap: 10px;">
+			<p>Meanwhile, please solve the CAPTCHA below to additionally prove you are a human:</p>
+			<img :src="captcha_challenge_image" alt="CAPTCHA Challenge" style="width: 350px; margin-top: 10px; border-radius: var(--border-radius-md); pointer-events: none; user-select: none;" @contextmenu.prevent="" @drag.prevent="" @dragstart.prevent="" />
+			<input-field v-model="captcha_input" inputmode="numeric" :maxlength="6" style="width: 350px;" label="What's written in the box?" :checkoutable="captcha_input.length == 6" @checkout="onCaptchaCheckout" />
+		</div>
 		<p v-if="step_failed" class="failure-message">
 			{{ failure_message || 'Session initialization failed. Please refresh the page and try again.' }}
 		</p>
