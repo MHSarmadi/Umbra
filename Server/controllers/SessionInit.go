@@ -36,14 +36,14 @@ const (
 )
 
 var (
-	b64url  = base64.RawURLEncoding.EncodeToString
-	db64url = base64.RawURLEncoding.DecodeString
+	b64  = base64.RawStdEncoding.EncodeToString
+	db64 = base64.RawStdEncoding.DecodeString
 )
 
 func sessionInitIdentityHash(r *http.Request) string {
 	identityRaw := clientIP(r)
 	sum := crypto.Sum([]byte(identityRaw))
-	return b64url(sum[:16])
+	return b64(sum[:16])
 }
 
 func clientIP(r *http.Request) string {
@@ -111,25 +111,24 @@ func (c *Controller) SessionInit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	logger.Tracef(
-		"session init payload field lengths (base64url chars): ed=%d x=%d sign=%d",
+		"session init payload field lengths (base64 chars): ed=%d x=%d sign=%d",
 		len(body_encoded.ClientEdPubKey),
 		len(body_encoded.ClientXPubKey),
 		len(body_encoded.ClientXPubKeySignature),
 	)
-	if body_decoded.ClientEdPubKey, err = db64url(body_encoded.ClientEdPubKey); err != nil {
+	if body_decoded.ClientEdPubKey, err = db64(body_encoded.ClientEdPubKey); err != nil {
 		logger.Debugf("session init rejected: invalid client_ed_pubkey encoding err=%v", err)
-		http.Error(w, "invalid client_ed_pubkey base64url encoding", http.StatusBadRequest)
+		http.Error(w, "invalid client_ed_pubkey base64 encoding", http.StatusBadRequest)
 		return
-	} else if body_decoded.ClientXPubKey, err = db64url(body_encoded.ClientXPubKey); err != nil {
+	} else if body_decoded.ClientXPubKey, err = db64(body_encoded.ClientXPubKey); err != nil {
 		logger.Debugf("session init rejected: invalid client_x_pubkey encoding err=%v", err)
-		http.Error(w, "invalid client_x_pubkey base64url encoding", http.StatusBadRequest)
+		http.Error(w, "invalid client_x_pubkey base64 encoding", http.StatusBadRequest)
 		return
-	} else if body_decoded.ClientXPubKeySignature, err = db64url(body_encoded.ClientXPubKeySignature); err != nil {
+	} else if body_decoded.ClientXPubKeySignature, err = db64(body_encoded.ClientXPubKeySignature); err != nil {
 		logger.Debugf("session init rejected: invalid client_x_pubkey_sign encoding err=%v", err)
-		http.Error(w, "invalid client_x_pubkey_sign base64url encoding", http.StatusBadRequest)
+		http.Error(w, "invalid client_x_pubkey_sign base64 encoding", http.StatusBadRequest)
 		return
 	} else if len(body_decoded.ClientEdPubKey) != 32 || len(body_decoded.ClientXPubKey) != 32 {
-		// Check lengths BEFORE calling Verify
 		logger.Debugf("session init rejected: invalid pubkey lengths ed=%d x=%d", len(body_decoded.ClientEdPubKey), len(body_decoded.ClientXPubKey))
 		http.Error(w, "invalid ed-pubkey or x-pubkey length", http.StatusBadRequest)
 		return
@@ -260,7 +259,7 @@ func (c *Controller) SessionInit(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "could not store seesion", http.StatusInternalServerError)
 			return
 		}
-		logger.Tracef("session init session persisted session_id_b64_len=%d", len(b64url(session.UUID[:])))
+		logger.Tracef("session init session persisted session_id_b64_len=%d", len(b64(session.UUID[:])))
 
 		type SessionInitResponse struct {
 			Status                 string `json:"status"`
@@ -270,7 +269,6 @@ func (c *Controller) SessionInit(w http.ResponseWriter, r *http.Request) {
 			ServerXPubKeySignature string `json:"server_x_pubkey_sign"`
 			Payload                string `json:"payload"`
 			Signature              string `json:"signature"`
-			// SharedSecret           string `json:"shared_secret"` // ONLY FOR TESTING PURPOSES. REMOVE THIS IN PRODUCTION.
 		}
 		type SessionInitRawPayload struct {
 			CaptchaChallenge string               `json:"captcha_challenge"`
@@ -281,11 +279,11 @@ func (c *Controller) SessionInit(w http.ResponseWriter, r *http.Request) {
 		}
 
 		payload_raw := SessionInitRawPayload{
-			PoWChallenge:     b64url(session.PoWChallenge[:]),
+			PoWChallenge:     b64(session.PoWChallenge[:]),
 			PowParams:        session.PoWParams,
-			PoWSalt:          b64url(session.PoWSalt[:]),
-			SessionToken:     b64url(append(session_token_salt, session_token_ciphered...)), // session_token_salt is always exactly 12 bytes
-			CaptchaChallenge: b64url(captcha_png),
+			PoWSalt:          b64(session.PoWSalt[:]),
+			SessionToken:     b64(append(session_token_salt, session_token_ciphered...)), // session_token_salt is always exactly 12 bytes
+			CaptchaChallenge: b64(captcha_png),
 		}
 		payload_encoded, err := json.Marshal(payload_raw)
 		if err != nil {
@@ -309,13 +307,12 @@ func (c *Controller) SessionInit(w http.ResponseWriter, r *http.Request) {
 
 		response := SessionInitResponse{
 			Status:                 "ok",
-			SessionUUID:            b64url(session.UUID[:]),
-			ServerEdPubKey:         b64url(server_ed_pubkey),
-			ServerXPubKey:          b64url(server_x_pubkey),
-			ServerXPubKeySignature: b64url(server_x_pubkey_sign),
-			Payload:                b64url(payload),
-			Signature:              b64url(signature),
-			// SharedSecret:           b64url(shared_key), // ONLY FOR TESTING PURPOSES. REMOVE THIS IN PRODUCTION.
+			SessionUUID:            b64(session.UUID[:]),
+			ServerEdPubKey:         b64(server_ed_pubkey),
+			ServerXPubKey:          b64(server_x_pubkey),
+			ServerXPubKeySignature: b64(server_x_pubkey_sign),
+			Payload:                b64(payload),
+			Signature:              b64(signature),
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)

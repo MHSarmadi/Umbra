@@ -1,6 +1,6 @@
 /// <reference lib="webworker" />
 
-import { decodeBase64Url } from "../tools/base64url";
+import { decodeBase64 } from "../tools/base64";
 import { useSecureVault } from "../db";
 
 const { storeSecret, retrieveSecret } = useSecureVault();
@@ -95,7 +95,6 @@ self.onmessage = async (event: MessageEvent) => {
 			}
 			baseURL = new URL(event.data.url);
 			self.postMessage({ type: 'setBaseURL', success: true, url: baseURL.toString() });
-			// self.postMessage({ type: 'setBaseURL', success: false, error: "" });
 		} catch (err) {
 			console.error('Error setting base URL:', err);
 			self.postMessage({ type: 'setBaseURL', success: false, error: (err as Error).message });
@@ -146,6 +145,8 @@ self.onmessage = async (event: MessageEvent) => {
 			}
 
 			await storeSecret("session_soul", pubkeys.soul);
+
+			// Remove sensitive data from memory
 			pubkeys.soul.fill(0);
 			
 			request_payload = JSON.stringify({
@@ -176,29 +177,16 @@ self.onmessage = async (event: MessageEvent) => {
 
 				self.postMessage({ type: 'SendSessionKeypair', success: result.ok, response });
 
-				/*
-				payload:"thRVlyYHOLaNMzuafpx4j3lwsQp9NBlu4yNyKj8-F9oQfkzpp..."
-				server_ed_pubkey:"ISj3sYGh5PGH8LRaJw-FhUMlzeliEtsDFNSmbEn3BXA"
-				server_x_pubkey:"ZCVEMmCbaj-Ib8lZy6XYCXEBNQv0z_CQdIigzfyncTc"
-				server_x_pubkey_sign:"-W91pm7WGtYvPB-04qZ3BmuqDY3QZs1oLL8s9v3OoNPYqkPTBqo04YqeR3yYM4Eo8DOLl7DCVZynHFzD7HjVBw"
-				session_id:"L_BIDIukbrwIVYEiReAHcK55Y4LHpO-7"
-				signature:"oRqUBQcisS3_BT-GmHXFZNh86a_qvA_vpcmY3ljVkR9SCM-dzgpaxDpPT3hpdfa91CZFyQKjuqPW0H6Gt5POCQ"
-				status:"ok"
-				*/
 				const { payload, server_ed_pubkey, server_x_pubkey, server_x_pubkey_sign, session_id, signature } = response;
 
 				if (typeof payload !== 'string' || typeof server_ed_pubkey !== 'string' || typeof server_x_pubkey !== 'string' || typeof server_x_pubkey_sign !== 'string' || typeof session_id !== 'string') {
 					throw new Error("Invalid PoW response: missing or invalid fields");
 				}
 
-				const server_ed_pubkey_bytes = decodeBase64Url(server_ed_pubkey);
-				const server_x_pubkey_bytes = decodeBase64Url(server_x_pubkey);
-				const server_x_pubkey_sign_bytes = decodeBase64Url(server_x_pubkey_sign);
-				const session_id_bytes = decodeBase64Url(session_id);
-				// const payload_bytes = new Uint8Array(decodeBase64Url(payload));
-				// const signature_bytes = new Uint8Array(decodeBase64Url(signature));
-
-				// console.log(server_ed_pubkey_bytes, server_x_pubkey_bytes, server_x_pubkey_sign_bytes, session_id_bytes, "---", signature_bytes);
+				const server_ed_pubkey_bytes = decodeBase64(server_ed_pubkey);
+				const server_x_pubkey_bytes = decodeBase64(server_x_pubkey);
+				const server_x_pubkey_sign_bytes = decodeBase64(server_x_pubkey_sign);
+				const session_id_bytes = decodeBase64(session_id);
 
 				await storeSecret("server_ed_pubkey", server_ed_pubkey_bytes);
 				await storeSecret("server_x_pubkey", server_x_pubkey_bytes);
@@ -211,8 +199,8 @@ self.onmessage = async (event: MessageEvent) => {
 				}
 				
 				const deciphered_payload = await self.IntroduceServer?.(soul, server_ed_pubkey, server_x_pubkey, server_x_pubkey_sign, payload, signature);
-				// self.alert("Deciphering took " + (deciphered_payload as any).took_microseconds + " microseconds")
 
+				// Remove sensitive data from memory
 				soul.fill(0);
 				
 				self.postMessage({ type: 'IntroduceServer', success: true, payload: deciphered_payload });

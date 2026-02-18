@@ -18,6 +18,11 @@ import (
 	"golang.org/x/crypto/argon2"
 )
 
+var (
+	b64  = base64.RawStdEncoding.EncodeToString
+	db64 = base64.RawStdEncoding.DecodeString
+)
+
 func jsValueToByteSlice(v js.Value) ([]byte, error) {
 	if v.IsNull() || v.IsUndefined() {
 		return nil, fmt.Errorf("value is null or undefined")
@@ -96,9 +101,9 @@ func main() {
 
 				// Prepare response
 				response := js.Global().Get("Object").New()
-				response.Set("ed_pubkey", base64.RawURLEncoding.EncodeToString(edPubKey))
-				response.Set("x_pubkey", base64.RawURLEncoding.EncodeToString(xPubKey))
-				response.Set("x_pubkey_sign", base64.RawURLEncoding.EncodeToString(xPubKeySign))
+				response.Set("ed_pubkey", b64(edPubKey))
+				response.Set("x_pubkey", b64(xPubKey))
+				response.Set("x_pubkey_sign", b64(xPubKeySign))
 				response.Set("soul", js.Global().Get("Uint8Array").New(32))
 				js.CopyBytesToJS(response.Get("soul"), soul[:])
 
@@ -110,7 +115,7 @@ func main() {
 	}))
 
 	js.Global().Set("IntroduceServer", js.FuncOf(func(this js.Value, args []js.Value) any {
-		// expected args: soul, server_ed_pubkey: base64url, server_x_pubkey: base64url, server_x_pubkey_sign: base64url, payload: base64url, signature: base64url
+		// expected args: soul, server_ed_pubkey: base64, server_x_pubkey: base64, server_x_pubkey_sign: base64, payload: base64, signature: base64
 		if len(args) < 6 {
 			return js.Global().Get("Promise").New(js.FuncOf(func(_ js.Value, promArgs []js.Value) any {
 				reject := promArgs[1]
@@ -126,43 +131,43 @@ func main() {
 				return nil
 			}))
 		}
-		server_ed_pubkey, err := base64.RawURLEncoding.DecodeString(args[1].String())
+		server_ed_pubkey, err := db64(args[1].String())
 		if err != nil {
 			return js.Global().Get("Promise").New(js.FuncOf(func(_ js.Value, promArgs []js.Value) any {
 				reject := promArgs[1]
-				reject.Invoke("Invalid server_ed_pubkey base64url encoding: " + err.Error())
+				reject.Invoke("Invalid server_ed_pubkey base64 encoding: " + err.Error())
 				return nil
 			}))
 		}
-		server_x_pubkey, err := base64.RawURLEncoding.DecodeString(args[2].String())
+		server_x_pubkey, err := db64(args[2].String())
 		if err != nil {
 			return js.Global().Get("Promise").New(js.FuncOf(func(_ js.Value, promArgs []js.Value) any {
 				reject := promArgs[1]
-				reject.Invoke("Invalid server_x_pubkey base64url encoding: " + err.Error())
+				reject.Invoke("Invalid server_x_pubkey base64 encoding: " + err.Error())
 				return nil
 			}))
 		}
-		server_x_pubkey_sign, err := base64.RawURLEncoding.DecodeString(args[3].String())
+		server_x_pubkey_sign, err := db64(args[3].String())
 		if err != nil {
 			return js.Global().Get("Promise").New(js.FuncOf(func(_ js.Value, promArgs []js.Value) any {
 				reject := promArgs[1]
-				reject.Invoke("Invalid server_x_pubkey_sign base64url encoding: " + err.Error())
+				reject.Invoke("Invalid server_x_pubkey_sign base64 encoding: " + err.Error())
 				return nil
 			}))
 		}
-		payload, err := base64.RawURLEncoding.DecodeString(args[4].String())
+		payload, err := db64(args[4].String())
 		if err != nil {
 			return js.Global().Get("Promise").New(js.FuncOf(func(_ js.Value, promArgs []js.Value) any {
 				reject := promArgs[1]
-				reject.Invoke("Invalid payload base64url encoding: " + err.Error())
+				reject.Invoke("Invalid payload base64 encoding: " + err.Error())
 				return nil
 			}))
 		}
-		signature, err := base64.RawURLEncoding.DecodeString(args[5].String())
+		signature, err := db64(args[5].String())
 		if err != nil {
 			return js.Global().Get("Promise").New(js.FuncOf(func(_ js.Value, promArgs []js.Value) any {
 				reject := promArgs[1]
-				reject.Invoke("Invalid signature base64url encoding: " + err.Error())
+				reject.Invoke("Invalid signature base64 encoding: " + err.Error())
 				return nil
 			}))
 		}
@@ -179,12 +184,7 @@ func main() {
 
 				// 1. verifying signatures
 				if !crypto.Verify(server_ed_pubkey, server_x_pubkey, server_x_pubkey_sign) {
-					reject.Invoke(
-						"Invalid server session keys\n" +
-							base64.RawURLEncoding.EncodeToString(server_ed_pubkey) + "\n" +
-							base64.RawURLEncoding.EncodeToString(server_x_pubkey) + "\n" +
-							base64.RawURLEncoding.EncodeToString(server_x_pubkey_sign),
-					)
+					reject.Invoke("Invalid server session keys")
 					return
 				}
 

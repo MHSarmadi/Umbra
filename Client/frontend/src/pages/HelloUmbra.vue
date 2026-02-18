@@ -2,7 +2,7 @@
 import { inject, ref, type Ref } from 'vue';
 import LargeButton from '../components/LargeButton.vue';
 import ProgressBar from '../components/ProgressBar.vue';
-import { base64urlToBase64, decodeBase64Url } from '../tools/base64url';
+import { decodeBase64 } from '../tools/base64';
 // import { useRouter } from 'vue-router';
 
 // const $router = useRouter();
@@ -60,10 +60,10 @@ workerRouter.value['IntroduceServer'] = (event: MessageEvent) => {
 	if (event.data.success) {
 		current_step.value = 2;
 		console.log(event.data.payload);
-		captcha_challenge_image.value = `data:image/png;base64,${base64urlToBase64(event.data.payload.captcha_challenge)}`
+		captcha_challenge_image.value = `data:image/png;base64,${event.data.payload.captcha_challenge}`
 		pow_id.value = Math.floor(Math.random() * 36 ** 8).toString(36); // Generate random ID for this proof of work session
 		// console.log(event.data.payload.pow_salt)
-		const challenge = decodeBase64Url(event.data.payload.pow_challenge), salt = decodeBase64Url(event.data.payload.pow_salt)
+		const challenge = decodeBase64(event.data.payload.pow_challenge), salt = decodeBase64(event.data.payload.pow_salt)
 		wasmWorker.postMessage({
 			type: "PoW",
 			progress_id: pow_id.value,
