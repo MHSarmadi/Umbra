@@ -5,9 +5,18 @@ import { useSecureVault } from "../db";
 
 const { storeSecret, retrieveSecret } = useSecureVault();
 
-const response = await fetch("/wasm_exec.js");
-const wasmExecCode = await response.text();
-eval(wasmExecCode); // Defines 'Go' class
+let goRuntimePromise: Promise<void> | null = null;
+async function ensureGoRuntimeLoaded(): Promise<void> {
+	if (goRuntimePromise) {
+		return goRuntimePromise;
+	}
+	goRuntimePromise = (async () => {
+		const response = await fetch("/wasm_exec.js");
+		const wasmExecCode = await response.text();
+		eval(wasmExecCode); // Defines 'Go' class
+	})();
+	return goRuntimePromise;
+}
 
 let go = null, initialized = false;
 
@@ -74,6 +83,7 @@ declare global {
 self.onmessage = async (event: MessageEvent) => {
 	if (!initialized || event.data.type === 'init') {
 		try {
+			await ensureGoRuntimeLoaded();
 			go = new Go();
 			const result = await WebAssembly.instantiateStreaming(fetch('/umbra.wasm'), go.importObject);
 			go.run(result.instance);
