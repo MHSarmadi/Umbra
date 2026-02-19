@@ -4,13 +4,10 @@ import LargeButton from '../components/LargeButton.vue';
 import ProgressBar from '../components/ProgressBar.vue';
 import { decodeBase64 } from '../tools/base64';
 import InputField from '../components/InputField.vue';
-// import { useRouter } from 'vue-router';
 
-// const $router = useRouter();
-
-const wasmWorker = inject('wasmWorker') as Worker;
-const workerRouter = inject('workerRouter') as Ref<{ [key: string]: (data: any) => void }>;
-const progressPercentages = inject('progressPercentages') as Ref<{ [key: string]: (id: string) => (percentage: number) => void }>;
+const workerPool = inject<Worker>('worker-pool')!;
+const workerRouter = inject<Ref<{ [key: string]: (data: any) => void }>>('workerRouter')!;
+const progressPercentages = inject<Ref<{ [key: string]: (id: string) => (percentage: number) => void }>>('progressPercentages')!;
 
 type Pages = 'HelloUmbra' | 'SessionInit';
 const current_page = ref<Pages>('HelloUmbra');
@@ -65,7 +62,7 @@ workerRouter.value['IntroduceServer'] = (event: MessageEvent) => {
 		captcha_challenge_image.value = `data:image/png;base64,${event.data.payload.captcha_challenge}`
 		pow_id.value = Math.floor(Math.random() * 36 ** 8).toString(36); // Generate random ID for this proof of work session
 		const challenge = decodeBase64(event.data.payload.pow_challenge), salt = decodeBase64(event.data.payload.pow_salt)
-		wasmWorker.postMessage({
+		workerPool.postMessage({
 			type: "PoW",
 			progress_id: pow_id.value,
 			challenge: challenge.buffer,
@@ -133,7 +130,7 @@ function onCaptchaCheckout(value: string | number) {
 		alert("Please enter a valid 6-digit numeric code from the CAPTCHA challenge.");
 		return;
 	}
-	wasmWorker.postMessage({
+	workerPool.postMessage({
 		type: 'CheckoutCaptcha',
 		captcha_response: value
 	});
@@ -144,7 +141,7 @@ function goto_session() {
 	current_step.value = 0;
 
 	// STEP 1: Generate Keypair
-	wasmWorker.postMessage({
+	workerPool.postMessage({
 		type: 'SessionKeypair'
 	});
 }

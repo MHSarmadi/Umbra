@@ -94,16 +94,20 @@ self.onmessage = async (event: MessageEvent) => {
 			return;
 		}
 	}
-	if (event.data.type === 'setBaseURL') {	
+	if (event.data.type === 'init') {
+		postMessage({ type: "freed", processType: 'init' })
+	} else if (event.data.type === 'setBaseURL') {	
 		try {
 			if (typeof event.data.url !== 'string') {
 				throw new Error("Invalid base URL: must be a string");
 			}
 			baseURL = new URL(event.data.url);
-			self.postMessage({ type: 'setBaseURL', success: true, url: baseURL.toString() });
+			self.postMessage({ type: 'setBaseURL', success: true });
 		} catch (err) {
 			console.error('Error setting base URL:', err);
 			self.postMessage({ type: 'setBaseURL', success: false, error: err });
+		} finally {
+			postMessage({ type: "freed", processType: event.data.type })
 		}
 	} else if (event.data.type === 'SessionKeypair') {
 		let request_payload = ""
@@ -188,6 +192,8 @@ self.onmessage = async (event: MessageEvent) => {
 		} catch (err) {
 			console.error('Error during session key pair generation:', err);
 			self.postMessage({ type: 'SessionKeypair', success: false, error: err });
+		} finally {
+			postMessage({ type: "freed", processType: event.data.type })
 		}
 	} else if (event.data.type === 'PoW') {
 		self.ComputePoW?.(
@@ -206,6 +212,8 @@ self.onmessage = async (event: MessageEvent) => {
 		})?.catch((err: Error) => {
 			console.error('Error during PoW computation:', err);
 			self.postMessage({ type: 'PoW', success: false, error: err.message });
+		})?.finally(() => {
+			postMessage({ type: "freed", processType: event.data.type })
 		});
 	} else if (event.data.type === 'CheckoutCaptcha') {
 		const { captcha_response } = event.data;
@@ -241,6 +249,8 @@ self.onmessage = async (event: MessageEvent) => {
 			console.error('Error retrieving session token ciphered:', err);
 			self.postMessage({ type: 'CheckoutCaptcha', success: false, error: err });
 			return;
+		} finally {
+			postMessage({ type: "freed", processType: event.data.type })
 		}
 	} else {
 		console.warn('Unknown message type:', event.data.type);
