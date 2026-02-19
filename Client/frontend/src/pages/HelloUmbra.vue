@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { inject, ref, type Ref } from 'vue';
+import { inject, onUnmounted, ref, type Ref } from 'vue';
 import LargeButton from '../components/LargeButton.vue';
 import ProgressBar from '../components/ProgressBar.vue';
 import { decodeBase64 } from '../tools/base64';
@@ -124,6 +124,19 @@ progressPercentages.value['pow'] = (id: string) => {
 		pow_percent.value = Math.round(percentage * 100) / 100;
 	}
 }
+
+onUnmounted(() => {
+	delete workerRouter.value['SessionKeypair'];
+	delete workerRouter.value['SendSessionKeypair'];
+	delete workerRouter.value['IntroduceServer'];
+	delete workerRouter.value['PoW'];
+	delete workerRouter.value['CheckoutCaptcha'];
+	if (previous_pow_progress_function) {
+		progressPercentages.value['pow'] = previous_pow_progress_function;
+	} else {
+		delete progressPercentages.value['pow'];
+	}
+});
 
 function onCaptchaCheckout(value: string | number) {
 	if (typeof value !== 'string' || value.length !== 6 || !/^\d+$/.test(value)) {

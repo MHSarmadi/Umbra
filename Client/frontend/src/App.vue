@@ -10,18 +10,6 @@ provide('worker-pool', workerPool);
 provide('workerRouter', workerRouter);
 provide('progressPercentages', progressPercentages);
 
-
-var interval: number, counter = 0;
-workerRouter.value["setBaseURL"] = (event: MessageEvent) => {
-	if (!event.data.success && ++counter > 20) {
-		console.error('Failed to set base URL:', event.data.error);
-	} else if (event.data.success) {
-		console.log('Base URL set successfully');
-		clearInterval(interval);
-	} else {
-		console.warn('Failed to set base URL, retrying...', event.data.error);
-	}
-};
 workerRouter.value["progress"] = (event: MessageEvent) => {
 	const { progressType, id, percentage } = event.data;
 	if (typeof percentage === 'number' && typeof id === 'string') {

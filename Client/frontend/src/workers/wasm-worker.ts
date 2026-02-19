@@ -81,7 +81,7 @@ declare global {
 }
 
 self.onmessage = async (event: MessageEvent) => {
-	if (!initialized || event.data.type === 'init') {
+	if (!initialized) {
 		try {
 			await ensureGoRuntimeLoaded();
 			go = new Go();
@@ -93,18 +93,14 @@ self.onmessage = async (event: MessageEvent) => {
 			}
 			initialized = true;
 			console.log("WASM module initialized successfully");
-			if (event.data.type === 'init') {
-				self.postMessage({ type: 'init', success: true });
-			}
 		} catch (err) {
 			console.error('Error initializing WASM module:', err);
-			if (event.data.type === 'init') {
-				self.postMessage({ type: 'init', success: false, error: err });
-			}
+			self.postMessage({ type: 'init', success: false, error: err });
 			return;
 		}
 	}
 	if (event.data.type === 'init') {
+		self.postMessage({ type: 'init', success: true });
 		postMessage({ type: "freed", processType: 'init' })
 	} else if (event.data.type === 'setBaseURL') {	
 		try {
@@ -230,6 +226,7 @@ self.onmessage = async (event: MessageEvent) => {
 		if (typeof captcha_response !== 'string' || captcha_response.length !== 6 || !/^\d{6}$/.test(captcha_response)) {
 			console.warn("Invalid CAPTCHA response:", captcha_response);
 			self.postMessage({ type: 'CheckoutCaptcha', success: false, error: "Invalid CAPTCHA response" });
+			postMessage({ type: "freed", processType: event.data.type })
 			return;
 		}
 		const captcha_response_numeric = parseInt(captcha_response);
@@ -264,6 +261,7 @@ self.onmessage = async (event: MessageEvent) => {
 		}
 	} else {
 		console.warn('Unknown message type:', event.data.type);
+		postMessage({ type: "freed", processType: event.data.type })
 	}
 }
 

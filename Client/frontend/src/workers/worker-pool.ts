@@ -43,8 +43,10 @@ class WorkerInstance {
 	private rejectInit!: (reason?: any) => void;
 	private resolveBaseURL!: () => void;
 	private rejectBaseURL!: (reason?: any) => void;
+	private readonly onFreed: () => void;
+	private readonly onFatal: (reason: Error) => void;
 
-	constructor(worker: Worker, id: number, baseURL: string, startupTimeoutMs = 90000) {
+	constructor(worker: Worker, id: number, baseURL: string, onFreed: () => void, onFatal: (reason: Error) => void, startupTimeoutMs = 90000) {
 		this.id = id
 		this.worker = worker;
 		this.busy = false;
@@ -52,6 +54,8 @@ class WorkerInstance {
 		this.baseURL = baseURL;
 		this.startupTimeoutMs = startupTimeoutMs;
 		this.startupFailed = false;
+		this.onFreed = onFreed;
+		this.onFatal = onFatal;
 		this.router = new Map();
 		this.initPromise = new Promise((resolve, reject) => {
 			this.resolveInit = resolve;
@@ -83,14 +87,14 @@ class WorkerInstance {
 		this.router.set("freed", (data: any) => {
 			console.log(this.id, "FREED:", data.processType)
 			this.busy = false;
+			this.onFreed();
 		});
 
 		this.worker.onerror = (event: ErrorEvent) => {
-			const reason = new Error(`Worker ${this.id} runtime error: ${event.message}`);
-			this.failStartup(reason);
+			this.handleFatal(new Error(`Worker ${this.id} runtime error: ${event.message}`));
 		};
 		this.worker.onmessageerror = () => {
-			this.failStartup(new Error(`Worker ${this.id} message deserialization failed`));
+			this.handleFatal(new Error(`Worker ${this.id} message deserialization failed`));
 		};
 
 		this.worker.onmessage = (event: MessageEvent) => {
@@ -107,13 +111,21 @@ class WorkerInstance {
 	}
 
 	private failStartup(reason: Error) {
-		if (this.startupFailed || this.ready) {
+		if (this.startupFailed) {
 			return;
 		}
 		this.startupFailed = true;
+		if (!this.ready) {
+			this.rejectInit(reason);
+			this.rejectBaseURL(reason);
+		}
+	}
+
+	private handleFatal(reason: Error) {
+		this.ready = false;
 		this.busy = false;
-		this.rejectInit(reason);
-		this.rejectBaseURL(reason);
+		this.failStartup(reason);
+		this.onFatal(reason);
 	}
 
 	post(message: any) {
@@ -159,6 +171,13 @@ class WorkerInstance {
 	}
 }
 const workerPool: WorkerInstance[] = [];
+type Job = {
+	message: any;
+	resolve: () => void;
+	reject: (reason?: any) => void;
+};
+const pendingJobs: Job[] = [];
+let schedulerRunning = false;
 
 let workerCounter = 0;
 let createWorkerPromise: Promise<WorkerInstance> | null = null;
@@ -169,9 +188,27 @@ async function createWorker(): Promise<WorkerInstance> {
 	}
 	createWorkerPromise = (async () => {
 	++workerCounter
-	console.log("===== GENERATING WORKER " + workerCounter + " =====")
+	const workerId = workerCounter;
+	console.log("===== GENERATING WORKER " + workerId + " =====")
 	const worker = new WasmWorker();
-	const workerInstance = new WorkerInstance(worker, workerCounter, BASE_URL);
+	const workerInstance = new WorkerInstance(
+		worker,
+		workerId,
+		BASE_URL,
+		() => {
+			void runScheduler();
+		},
+		(reason: Error) => {
+			const index = workerPool.findIndex((w) => w.id === workerId);
+			if (index !== -1) {
+				workerPool.splice(index, 1);
+			}
+			worker.terminate();
+			console.error(`Worker ${workerId} removed from pool due to fatal error:`, reason);
+			self.postMessage({ type: "WorkerPoolError", success: false, error: String(reason) });
+			void runScheduler();
+		}
+	);
 	try {
 		await workerInstance.ensureReady();
 		workerPool.push(workerInstance);
@@ -191,21 +228,53 @@ void createWorker().catch((err) => {
 	console.error("Initial worker prewarm failed:", err);
 });
 
-async function post(message: any) {
-	while (true) {
-		for (const workerInstance of workerPool) {
-			if (!workerInstance.ready || workerInstance.busy) {
+async function runScheduler() {
+	if (schedulerRunning) {
+		return;
+	}
+	schedulerRunning = true;
+	try {
+		while (pendingJobs.length > 0) {
+			const nextJob = pendingJobs[0];
+			if (!nextJob) {
+				break;
+			}
+			let selectedWorker: WorkerInstance | undefined;
+
+			for (const workerInstance of workerPool) {
+				if (!workerInstance.ready || workerInstance.busy) {
+					continue;
+				}
+				selectedWorker = workerInstance;
+				break;
+			}
+
+			if (!selectedWorker) {
+				try {
+					selectedWorker = await createWorker();
+				} catch (err) {
+					nextJob.reject(err);
+					pendingJobs.shift();
+					continue;
+				}
+			}
+
+			if (!selectedWorker.post(nextJob.message)) {
 				continue;
 			}
-			if (workerInstance.post(message)) {
-				return;
-			}
+			nextJob.resolve();
+			pendingJobs.shift();
 		}
-		const workerInstance = await createWorker();
-		if (workerInstance.post(message)) {
-			return;
-		}
+	} finally {
+		schedulerRunning = false;
 	}
+}
+
+async function post(message: any): Promise<void> {
+	return new Promise<void>((resolve, reject) => {
+		pendingJobs.push({ message, resolve, reject });
+		void runScheduler();
+	});
 }
 
 self.onmessage = async (event: MessageEvent) => {

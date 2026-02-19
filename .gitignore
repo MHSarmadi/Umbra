@@ -4,4 +4,8 @@ Logs/
 Server/Logs/
 Client/dist/*.wasm
 Client/dist/wasm_exec.js
+Client/dist/assets/
+Client/dist/fonts/
+Client/dist/icons/
+Client/dist/index.html
 .vscode
