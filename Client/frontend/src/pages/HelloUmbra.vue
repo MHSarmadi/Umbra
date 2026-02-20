@@ -212,203 +212,249 @@ function goto_session() {
 <template>
 	<transition name="page-swap" mode="out-in">
 		<div :key="current_page">
-	<div class="hello-umbra page-panel animate-in" v-if="current_page == 'HelloUmbra'">
-		<h1 style="margin-top: 0;">
-			<svg class="inline" fill="#e0e0e0">
-				<use href="../assets/locked.svg" />
-			</svg>
-			Welcome to <i style="color: var(--main-highlight-color-3);">Umbra</i>
-		</h1>
-		<h2>Welcome — and thank you for being here.</h2>
-		<p>
-			Umbra is a privacy-first communication platform built for people who believe that private conversations
-			should actually be private.
-			No trackers, no hidden data collection, no silent compromises. Umbra is designed from the ground up with one
-			clear principle:
-			<q class="block">Your data belongs to you — not to servers, companies, or intermediaries.</q>
-			Whether you’re here out of curiosity, concern for privacy, or a desire for stronger security, you’re in the
-			right place.
-		</p>
-		<h2>What Makes Umbra Different?</h2>
-		<p>
-			Umbra is not just encrypted chat. It is a <q>Security Architecture</q>.
-		</p>
-		<p>
-			Here’s what that means for you — in simple terms:
-		</p>
-		<ul>
-			<li>
-				<h3><svg class="inline" fill="#e0e0e0">
-						<use href="../assets/key.svg" />
-					</svg> <b style="color: var(--main-highlight-color-3)">End-to-End Encryption</b> by Design</h3>
-				Messages are encrypted on your device and can only be decrypted by the intended recipient. Even Umbra’s
-				servers cannot read your messages.
-			</li>
+			<div class="hello-umbra page-panel animate-in" v-if="current_page == 'HelloUmbra'">
+				<h1 style="margin-top: 0;">
+					<svg class="inline" fill="#e0e0e0">
+						<use href="../assets/locked.svg" />
+					</svg>
+					Welcome to <i style="color: var(--main-highlight-color-3);">Umbra</i>
+				</h1>
+				<h2>Welcome — and thank you for being here.</h2>
+				<p>
+					Umbra is a privacy-first communication platform built for people who believe that private
+					conversations
+					should actually be private.
+					No trackers, no hidden data collection, no silent compromises. Umbra is designed from the ground up
+					with one
+					clear principle:
+					<q class="block">Your data belongs to you — not to servers, companies, or intermediaries.</q>
+					Whether you’re here out of curiosity, concern for privacy, or a desire for stronger security, you’re
+					in the
+					right place.
+				</p>
+				<h2>What Makes Umbra Different?</h2>
+				<p>
+					Umbra is not just encrypted chat. It is a <q>Security Architecture</q>.
+				</p>
+				<p>
+					Here’s what that means for you — in simple terms:
+				</p>
+				<ul>
+					<li>
+						<h3><svg class="inline" fill="#e0e0e0">
+								<use href="../assets/key.svg" />
+							</svg> <b style="color: var(--main-highlight-color-3)">End-to-End Encryption</b> by Design
+						</h3>
+						Messages are encrypted on your device and can only be decrypted by the intended recipient. Even
+						Umbra’s
+						servers cannot read your messages.
+					</li>
 
-			<li>
-				<h3>Client-Side Key Ownership</h3>
-				Your private cryptographic keys are generated and stored on your device. They are never stored in
-				plaintext on any server.
-			</li>
+					<li>
+						<h3>Client-Side Key Ownership</h3>
+						Your private cryptographic keys are generated and stored on your device. They are never stored
+						in
+						plaintext on any server.
+					</li>
 
-			<li>
-				<h3>Decentralization-Friendly Architecture</h3>
-				Umbra avoids centralized trust wherever possible and supports integrity verification mechanisms inspired
-				by distributed systems.
-			</li>
+					<li>
+						<h3>Decentralization-Friendly Architecture</h3>
+						Umbra avoids centralized trust wherever possible and supports integrity verification mechanisms
+						inspired
+						by distributed systems.
+					</li>
 
-			<li>
-				<h3>Minimal Metadata Exposure</h3>
-				Umbra is designed to reduce what can be inferred about who talks to whom, when, and how often.
-			</li>
+					<li>
+						<h3>Minimal Metadata Exposure</h3>
+						Umbra is designed to reduce what can be inferred about who talks to whom, when, and how often.
+					</li>
 
-			<li>
-				<h3>Open and Auditable</h3>
-				Umbra’s core technologies are open to inspection:
-				<q class="block">Transparency is a security feature.</q>
-			</li>
-		</ul>
-		<h2>Technologies & Cryptography (Plain Language)</h2>
-		<p>
-			Umbra uses modern, well-studied cryptographic tools
-		</p>
-		<p>
-			You don’t need to understand these to use Umbra, but if you’re curious:
-		</p>
+					<li>
+						<h3>Open and Auditable</h3>
+						Umbra’s core technologies are open to inspection:
+						<q class="block">Transparency is a security feature.</q>
+					</li>
+				</ul>
+				<h2>Technologies & Cryptography (Plain Language)</h2>
+				<p>
+					Umbra uses modern, well-studied cryptographic tools
+				</p>
+				<p>
+					You don’t need to understand these to use Umbra, but if you’re curious:
+				</p>
 
-		<ul>
-			<li>
-				<h3>Secure Key Exchange</h3>
-				We use elliptic-curve cryptography (X25519) so a group of users can safely agree on shared secrets —
-				even over the public internet.
-			</li>
-			<li>
-				<h3><svg class="inline" fill="#e0e0e0">
-						<use href="../assets/vault.svg" />
-					</svg> Strong Encryption</h3>
-				Messages are protected using our <b>powerful unique encryption algorithm</b> called <q>MACE</q>. You can
-				find more information about it in the <a href="https://github.com/MHSarmadi/MACE" target="_blank">MACE
-					GitHub repository</a>.
-			</li>
-			<li>
-				<h3>Digital Signatures</h3>
-				Every message can be cryptographically signed (Ed25519), allowing clients to verify authenticity of
-				<b>others</b> and <b>the server</b>.
-			</li>
-			<li>
-				<h3>Key Derivation & Protection</h3>
-				Passwords and secrets are hardened using modern memory-hard algorithms (Argon2) to resist brute-force
-				attacks.
-			</li>
-			<li>
-				<h3>Integrity & Verification Layers</h3>
-				Group messaging and message ordering rely on cryptographic validation to prevent silent manipulation.
-			</li>
-		</ul>
-		<p>
-			All of this happens quietly in the background — your experience remains simple.
-		</p>
+				<ul>
+					<li>
+						<h3>Secure Key Exchange</h3>
+						We use elliptic-curve cryptography (X25519) so a group of users can safely agree on shared
+						secrets —
+						even over the public internet.
+					</li>
+					<li>
+						<h3><svg class="inline" fill="#e0e0e0">
+								<use href="../assets/vault.svg" />
+							</svg> Strong Encryption</h3>
+						Messages are protected using our <b>powerful unique encryption algorithm</b> called <q>MACE</q>.
+						You can
+						find more information about it in the <a href="https://github.com/MHSarmadi/MACE"
+							target="_blank">MACE
+							GitHub repository</a>.
+					</li>
+					<li>
+						<h3>Digital Signatures</h3>
+						Every message can be cryptographically signed (Ed25519), allowing clients to verify authenticity
+						of
+						<b>others</b> and <b>the server</b>.
+					</li>
+					<li>
+						<h3>Key Derivation & Protection</h3>
+						Passwords and secrets are hardened using modern memory-hard algorithms (Argon2) to resist
+						brute-force
+						attacks.
+					</li>
+					<li>
+						<h3>Integrity & Verification Layers</h3>
+						Group messaging and message ordering rely on cryptographic validation to prevent silent
+						manipulation.
+					</li>
+				</ul>
+				<p>
+					All of this happens quietly in the background — your experience remains simple.
+				</p>
 
-		<h2>What’s Next?</h2>
-		<p>
-			Before you can start using Umbra, your client needs to establish a secure session.
-			<br />
-			This process will:
-		</p>
-		<ul>
-			<li>Generate a unique key pair for your current session</li>
-			<li>Establish a secure connection with the Umbra server</li>
-			<li>Ensure that future requests are authenticated and protected</li>
-		</ul>
-		<p>
-			No messages are sent and no data is shared until this process completes.
-		</p>
-		<h2 style="color: var(--main-highlight-color-4)">
-			By continuing, you agree to begin Umbra’s secure session initialization process.
-		</h2>
-		<large-button @click="goto_session()">
-			Let’s Go!
-		</large-button>
-	</div>
-	<div class="session-init page-panel animate-in" v-else-if="current_page == 'SessionInit'">
-		<h1 style="margin-top: 0;"><svg class="inline" fill="#e0e0e0">
-				<use href="../assets/locked.svg" />
-			</svg> Establishing Secure Session...</h1>
-		<p>
-			Umbra is now setting up your secure session. This process may take a moment as we generate cryptographic
-			keys and prove you are not a robot.
-			<br /><br />
-			Please wait while we ensure that your communication will be private and secure.
-		</p>
-		<ul class="steps">
-			<li
-				:class="`${current_step! > 0 ? 'done' : ((step_failed && current_step == 0) ? 'failed' : (!step_failed ? 'loading' : ''))}${current_step == 0 ? ' active' : ''}`">
-				Generating session key pairs...</li>
-			<li
-				:class="`${current_step! > 1 ? 'done' : ((step_failed && current_step == 1) ? 'failed' : (!step_failed ? 'loading' : ''))}${current_step == 1 ? ' active' : ''}`">
-				Executing first handshake with the server...</li>
-			<li
-				:class="`${current_step! > 2 ? 'done' : ((step_failed && current_step == 2) ? 'failed' : (!step_failed ? 'loading' : ''))}${current_step == 2 ? ' active' : ''}`">
-				Cryptographic level of anti-bot assurance...
-				<progress-bar v-if="current_step == 2" style="margin-left: 20px;" :percentage="pow_percent"
-					size="large" />
-			</li>
-		</ul>
-		<transition name="fade-rise">
-			<hr />
-		</transition>
-		<div class="captcha-transition-host">
-			<transition name="captcha-swap" mode="out-in">
-				<div v-if="captchaPanelState === 'form'" key="captcha-form" class="captcha-box">
-					<p>Meanwhile, please solve the CAPTCHA below to additionally prove you are a human:</p>
-					<img :src="captcha_challenge_image" alt="CAPTCHA Challenge" class="captcha-image"
-						@contextmenu.prevent="" @drag.prevent="" @dragstart.prevent="" />
-					
-					<input-field id="captcha_input" v-model="captcha_input" inputmode="numeric" :maxlength="6"
-						v-if="!captcha_verified"
-						style="width: 350px;" label="What's written in the box?"
-						:checkoutable="captcha_input.length == 6 && !captcha_error_msg.length && !captcha_loading && !captcha_verified"
-						:clearable="!!captcha_error_msg.length && !captcha_loading && !captcha_verified"
-						:loading="captcha_loading" :disabled="captcha_loading || captcha_verified"
-						:readonly="captcha_loading || captcha_verified" @checkout="onCaptchaCheckout(captcha_input)"
-						@enter="onCaptchaCheckout(captcha_input)"
-						:error-text="captcha_error_msg.length ? captcha_error_msg : undefined" />
-					<transition name="fade-rise">
-						<p v-if="captcha_verified" class="captcha-success">{{ captcha_success_msg }}</p>
+				<h2>What’s Next?</h2>
+				<p>
+					Before you can start using Umbra, your client needs to establish a secure session.
+					<br />
+					This process will:
+				</p>
+				<ul>
+					<li>Generate a unique key pair for your current session</li>
+					<li>Establish a secure connection with the Umbra server</li>
+					<li>Ensure that future requests are authenticated and protected</li>
+				</ul>
+				<p>
+					No messages are sent and no data is shared until this process completes.
+				</p>
+				<h2 style="color: var(--main-highlight-color-4)">
+					By continuing, you agree to begin Umbra’s secure session initialization process.
+				</h2>
+				<large-button @click="goto_session()">
+					Let’s Go!
+				</large-button>
+			</div>
+			<div class="session-init page-panel animate-in" v-else-if="current_page == 'SessionInit'">
+				<h1 style="margin-top: 0;"><svg class="inline" fill="#e0e0e0">
+						<use href="../assets/locked.svg" />
+					</svg> Establishing Secure Session...</h1>
+				<p>
+					Umbra is now setting up your secure session. This process may take a moment as we generate
+					cryptographic
+					keys and prove you are not a robot.
+					<br /><br />
+					Please wait while we ensure that your communication will be private and secure.
+				</p>
+				<ul class="steps">
+					<li
+						:class="`${current_step! > 0 ? 'done' : ((step_failed && current_step == 0) ? 'failed' : (!step_failed ? 'loading' : ''))}${current_step == 0 ? ' active' : ''}`">
+						Generating session key pairs...</li>
+					<li
+						:class="`${current_step! > 1 ? 'done' : ((step_failed && current_step == 1) ? 'failed' : (!step_failed ? 'loading' : ''))}${current_step == 1 ? ' active' : ''}`">
+						Executing first handshake with the server...</li>
+					<li
+						:class="`${current_step! > 2 ? 'done' : ((step_failed && current_step == 2) ? 'failed' : (!step_failed ? 'loading' : ''))}${current_step == 2 ? ' active' : ''}`">
+						Cryptographic level of anti-bot assurance...
+						<progress-bar v-if="current_step == 2" style="margin-left: 20px;" :percentage="pow_percent"
+							size="large" />
+					</li>
+				</ul>
+				<transition name="fade-rise">
+					<hr />
+				</transition>
+				<div class="captcha-transition-host">
+					<transition name="captcha-swap" mode="out-in">
+						<div v-if="captchaPanelState === 'form'" key="captcha-form" class="captcha-box">
+							<p>Meanwhile, please solve the CAPTCHA below to additionally prove you are a human:</p>
+							<img :src="captcha_challenge_image" alt="CAPTCHA Challenge" class="captcha-image"
+								@contextmenu.prevent="" @drag.prevent="" @dragstart.prevent="" />
+
+							<input-field id="captcha_input" v-model="captcha_input" inputmode="numeric" :maxlength="6"
+								v-if="!captcha_verified" style="width: 350px;" label="What's written in the box?"
+								:checkoutable="captcha_input.length == 6 && !captcha_error_msg.length && !captcha_loading && !captcha_verified"
+								:clearable="!!captcha_error_msg.length && !captcha_loading && !captcha_verified"
+								:loading="captcha_loading" :disabled="captcha_loading || captcha_verified"
+								:readonly="captcha_loading || captcha_verified"
+								@checkout="onCaptchaCheckout(captcha_input)" @enter="onCaptchaCheckout(captcha_input)"
+								:error-text="captcha_error_msg.length ? captcha_error_msg : undefined" />
+							<transition name="fade-rise">
+								<p v-if="captcha_verified" class="captcha-success">{{ captcha_success_msg }}</p>
+							</transition>
+						</div>
+						<p v-else-if="captchaPanelState === 'verified'" key="captcha-verified"
+							class="captcha-success compact">
+							CAPTCHA Verified.
+						</p>
 					</transition>
 				</div>
-				<p v-else-if="captchaPanelState === 'verified'" key="captcha-verified" class="captcha-success compact">
-					CAPTCHA Verified.
-				</p>
-			</transition>
-		</div>
 
-		<div v-if="canProceedToNext" class="next-action">
-			<h3 class="next-hint">All anti-bot checks are complete. You can continue now.</h3>
-			<large-button @click="goto_next_page()">Next</large-button>
-		</div>
-		<p v-if="step_failed" class="failure-message">
-			{{ failure_message || 'Session initialization failed. Please refresh the page and try again.' }}
-		</p>
-	</div>
-	<div class="session-ready page-panel animate-in" v-else-if="current_page == 'SessionReady'">
-		<h1 style="margin-top: 0;">
-			<svg class="inline" fill="#e0e0e0">
-				<use href="../assets/check2.svg" />
-			</svg>
-			Session Ready
-		</h1>
-		<p>
-			Your secure session has been established successfully. You are ready for the next part of the flow.
-		</p>
-		<p>
-			Now, you can either Login or Signup to start using Umbra.
-		</p>
-		<p>
-			The point is, once you are logged in your account in either way, your session immediatly locks to that account.
-			It means whenever you proceed to Logout and re-Login, you need to re-do the session initialization process again.
-		</p>
-	</div>
+				<div v-if="canProceedToNext" class="next-action">
+					<h3 class="next-hint">All anti-bot checks are complete. You can continue now.</h3>
+					<large-button @click="goto_next_page()">Next</large-button>
+				</div>
+				<p v-if="step_failed" class="failure-message">
+					{{ failure_message || 'Session initialization failed. Please refresh the page and try again.' }}
+				</p>
+			</div>
+			<div class="session-ready page-panel animate-in" v-else-if="current_page == 'SessionReady'">
+				<h1 style="margin-top: 0;">
+					<svg class="inline" fill="#e0e0e0">
+						<use href="../assets/check2.svg" />
+					</svg>
+					Session Ready
+				</h1>
+
+				<p>
+					Your secure session has been established successfully. You are ready for the next part of the flow.
+				</p>
+				<p>
+					The initialization phase is complete. Temporary session keys have been generated,
+					and this device is now operating within a protected communication channel. All further interactions
+					with Umbra will take place inside this secured context.
+				</p>
+				<p>
+					No account is attached yet. The session is active, but not authenticated.
+				</p>
+				<h2>Next Step</h2>
+				<p>You may now:</p>
+				<ul>
+					<li>Login to an existing Umbra account</li>
+					<li>Sign Up to create a new account</li>
+				</ul>
+				<p>
+					Once authentication is completed, this session becomes cryptographically bound to the account you
+					choose.
+					From that point forward, all actions performed during this session are associated exclusively with
+					that identity.
+				</p>
+				<hr />
+				<h2>Session Binding Model</h2>
+				<q class="block">Umbra does not reuse sessions across logins.</q>
+				<p>
+					If you log out, the current session is immediately terminated.
+					<br />
+					To authenticate again — even with the same account — a new secure session must be initialized.
+				</p>
+				<p>This ensures that:</p>
+				<ul>
+					<li>Each authentication begins with fresh cryptographic state</li>
+					<li>Sessions remain isolated between accounts</li>
+					<li>No residual security context persists after logout</li>
+				</ul>
+				<hr />
+				<h3>You are now ready to continue.</h3>
+				<large-button style="margin-right: 15px">Login</large-button>
+				<large-button>Signup</large-button>
+			</div>
 		</div>
 	</transition>
 </template>
@@ -476,9 +522,12 @@ function goto_session() {
 	@w1: calc(100vw - 60px);
 	@w2: max(40vw, 640px);
 	width: min(@w1, @w2);
+	@h1: calc(100dvh - 60px);
+	@h2: max(40dvh, 800px);
+	height: min(@h1, @h2);
 	padding: 20px;
+	.scroll-container();
 	border-radius: var(--border-radius-lg);
-	overflow: hidden;
 	box-shadow: 0 18px 42px #00000066;
 	background-size: 150% 150%, 130% 130%, 140% 140%;
 	animation: panel-gradient-drift 13s ease-in-out infinite alternate;
@@ -532,41 +581,65 @@ function goto_session() {
 }
 
 .animate-in {
-	& > * {
+	&>* {
 		opacity: 0;
 		animation: content-rise 0.5s ease forwards;
 	}
 
-	& > :nth-child(1) {
+	&> :nth-child(1) {
 		animation-delay: 0.05s;
 	}
-	
-	& > :nth-child(2) {
+
+	&> :nth-child(2) {
 		animation-delay: 0.1s;
 	}
-	
-	& > :nth-child(3) {
+
+	&> :nth-child(3) {
 		animation-delay: 0.15s;
 	}
-	
-	& > :nth-child(4) {
+
+	&> :nth-child(4) {
 		animation-delay: 0.2s;
 	}
-	
-	& > :nth-child(5) {
+
+	&> :nth-child(5) {
 		animation-delay: 0.25s;
 	}
-	
-	& > :nth-child(6) {
+
+	&> :nth-child(6) {
 		animation-delay: 0.3s;
 	}
-	
-	& > :nth-child(7) {
+
+	&> :nth-child(7) {
 		animation-delay: 0.35s;
 	}
-	
-	& > :nth-child(8) {
+
+	&> :nth-child(8) {
 		animation-delay: 0.4s;
+	}
+
+	&> :nth-child(9) {
+		animation-delay: 0.45s;
+	}
+
+	&> :nth-child(10) {
+		animation-delay: 0.5s;
+	}
+
+	&> :nth-child(11) {
+		animation-delay: 0.55s;
+	}
+
+	&> :nth-child(12) {
+		animation-delay: 0.6s;
+	}
+
+	&> :nth-child(13) {
+		animation-delay: 0.65s;
+	}
+
+	&> :nth-child(14) {
+		animation-delay: 0.7s;
 	}
 }
 
@@ -711,9 +784,11 @@ function goto_session() {
 	0% {
 		background-position: 0% 0%, 100% 100%, 50% 50%;
 	}
+
 	50% {
 		background-position: 35% 45%, 70% 40%, 60% 75%;
 	}
+
 	100% {
 		background-position: 100% 100%, 0% 0%, 45% 20%;
 	}
