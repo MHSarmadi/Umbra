@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { inject, onUnmounted, ref, watch, type Ref } from 'vue';
+import { computed, inject, onUnmounted, ref, watch, type Ref } from 'vue';
 import LargeButton from '../components/LargeButton.vue';
 import ProgressBar from '../components/ProgressBar.vue';
 import { decodeBase64 } from '../tools/base64';
@@ -10,11 +10,11 @@ const workerPool = inject<Worker>('worker-pool')!;
 const workerRouter = inject<Ref<{ [key: string]: (data: any) => void }>>('workerRouter')!;
 const progressPercentages = inject<Ref<{ [key: string]: (id: string) => (percentage: number) => void }>>('progressPercentages')!;
 
-type Pages = 'HelloUmbra' | 'SessionInit';
+type Pages = 'HelloUmbra' | 'SessionInit' | 'SessionReady';
 const current_page = ref<Pages>('HelloUmbra');
 
 // 0: 'keypair_gen' | 1: 'send_to_server' | 2: 'pow';
-const current_step = ref<number|null>(null)
+const current_step = ref<number | null>(null)
 const step_failed = ref<boolean>(false);
 const failure_message = ref<string>('');
 
@@ -25,6 +25,21 @@ const captcha_challenge_image = ref<string>('');
 const captcha_input = ref<string>('');
 const captcha_error_msg = ref<string>('');
 const captcha_loading = ref<boolean>(false);
+const captcha_verified = ref<boolean>(false);
+const captcha_success_msg = ref<string>('');
+const show_captcha_box = ref<boolean>(true);
+let captchaSuccessTimer: ReturnType<typeof setTimeout> | null = null;
+
+const isPowCompleted = computed<boolean>(() => current_step.value !== null && current_step.value > 2);
+const canProceedToNext = computed<boolean>(() => isPowCompleted.value && captcha_verified.value && !step_failed.value);
+const shouldShowCaptchaBox = computed<boolean>(() => current_step.value !== null && current_step.value >= 2 && show_captcha_box.value);
+
+function resetCaptchaSuccessTimer() {
+	if (captchaSuccessTimer) {
+		clearTimeout(captchaSuccessTimer);
+		captchaSuccessTimer = null;
+	}
+}
 
 watch(captcha_input, () => {
 	if (captcha_error_msg.value.length) {
@@ -69,6 +84,10 @@ workerRouter.value['IntroduceServer'] = (event: MessageEvent) => {
 		current_step.value = 2;
 		console.log("Server introduced successfully:", event.data.payload);
 		captcha_challenge_image.value = `data:image/png;base64,${event.data.payload.captcha_challenge}`
+		show_captcha_box.value = true;
+		captcha_verified.value = false;
+		captcha_success_msg.value = '';
+		resetCaptchaSuccessTimer();
 		pow_id.value = Math.floor(Math.random() * 36 ** 8).toString(36); // Generate random ID for this proof of work session
 		const challenge = decodeBase64(event.data.payload.pow_challenge), salt = decodeBase64(event.data.payload.pow_salt)
 		workerPool.postMessage({
@@ -112,10 +131,18 @@ workerRouter.value['CheckoutCaptcha'] = (event: MessageEvent) => {
 	}
 	captcha_loading.value = false;
 	if (event.data.success) {
-		alert("checked out!");
+		captcha_verified.value = true;
+		captcha_error_msg.value = '';
+		captcha_success_msg.value = "Correct CAPTCHA. Verification complete.";
+		captcha_input.value = '';
+		resetCaptchaSuccessTimer();
+		captchaSuccessTimer = setTimeout(() => {
+			show_captcha_box.value = false;
+		}, 1400);
 	} else if (event.data.error !== 'Wrong captcha solution') {
 		console.error("Decrypting the Session Token failed:", event.data.error);
 	} else {
+		captcha_verified.value = false;
 		captcha_error_msg.value = 'Incorrect. Retry?';
 		jQuery("#captcha_input").trigger("focus");
 	}
@@ -125,8 +152,8 @@ const previous_pow_progress_function = progressPercentages.value['pow'];
 progressPercentages.value['pow'] = (id: string) => {
 	if (id !== pow_id.value) {
 		if (previous_pow_progress_function)
-			return previous_pow_progress_function?.(id) 
-		else 
+			return previous_pow_progress_function?.(id)
+		else
 			return (_: number) => {
 				console.warn(`Received progress update for unknown proof of work session ID ${id}. Ignoring.`);
 			};
@@ -142,6 +169,7 @@ onUnmounted(() => {
 	delete workerRouter.value['IntroduceServer'];
 	delete workerRouter.value['PoW'];
 	delete workerRouter.value['CheckoutCaptcha'];
+	resetCaptchaSuccessTimer();
 	if (previous_pow_progress_function) {
 		progressPercentages.value['pow'] = previous_pow_progress_function;
 	} else {
@@ -161,6 +189,10 @@ function onCaptchaCheckout(value: string | number) {
 	});
 }
 
+function goto_next_page() {
+	current_page.value = 'SessionReady';
+}
+
 function goto_session() {
 	current_page.value = 'SessionInit';
 	current_step.value = 0;
@@ -174,13 +206,18 @@ function goto_session() {
 
 <template>
 	<div class="hello-umbra" v-if="current_page == 'HelloUmbra'">
-		<h1 style="margin-top: 0;"><svg class="inline" fill="#e0e0e0"><use href="../assets/locked.svg" /></svg> Welcome to <i style="color: var(--main-highlight-color-3);">Umbra</i></h1>
+		<h1 style="margin-top: 0;"><svg class="inline" fill="#e0e0e0">
+				<use href="../assets/locked.svg" />
+			</svg> Welcome to <i style="color: var(--main-highlight-color-3);">Umbra</i></h1>
 		<h2>Welcome — and thank you for being here.</h2>
 		<p>
-			Umbra is a privacy-first communication platform built for people who believe that private conversations should actually be private.
-			No trackers, no hidden data collection, no silent compromises. Umbra is designed from the ground up with one clear principle:
+			Umbra is a privacy-first communication platform built for people who believe that private conversations
+			should actually be private.
+			No trackers, no hidden data collection, no silent compromises. Umbra is designed from the ground up with one
+			clear principle:
 			<q class="block">Your data belongs to you — not to servers, companies, or intermediaries.</q>
-			Whether you’re here out of curiosity, concern for privacy, or a desire for stronger security, you’re in the right place.
+			Whether you’re here out of curiosity, concern for privacy, or a desire for stronger security, you’re in the
+			right place.
 		</p>
 		<h2>What Makes Umbra Different?</h2>
 		<p>
@@ -191,18 +228,23 @@ function goto_session() {
 		</p>
 		<ul>
 			<li>
-				<h3><svg class="inline" fill="#e0e0e0"><use href="../assets/key.svg" /></svg> <b style="color: var(--main-highlight-color-3)">End-to-End Encryption</b> by Design</h3>
-				Messages are encrypted on your device and can only be decrypted by the intended recipient. Even Umbra’s servers cannot read your messages.
+				<h3><svg class="inline" fill="#e0e0e0">
+						<use href="../assets/key.svg" />
+					</svg> <b style="color: var(--main-highlight-color-3)">End-to-End Encryption</b> by Design</h3>
+				Messages are encrypted on your device and can only be decrypted by the intended recipient. Even Umbra’s
+				servers cannot read your messages.
 			</li>
 
 			<li>
 				<h3>Client-Side Key Ownership</h3>
-				Your private cryptographic keys are generated and stored on your device. They are never stored in plaintext on any server.
+				Your private cryptographic keys are generated and stored on your device. They are never stored in
+				plaintext on any server.
 			</li>
 
 			<li>
 				<h3>Decentralization-Friendly Architecture</h3>
-				Umbra avoids centralized trust wherever possible and supports integrity verification mechanisms inspired by distributed systems.
+				Umbra avoids centralized trust wherever possible and supports integrity verification mechanisms inspired
+				by distributed systems.
 			</li>
 
 			<li>
@@ -227,19 +269,26 @@ function goto_session() {
 		<ul>
 			<li>
 				<h3>Secure Key Exchange</h3>
-				We use elliptic-curve cryptography (X25519) so a group of users can safely agree on shared secrets — even over the public internet.
+				We use elliptic-curve cryptography (X25519) so a group of users can safely agree on shared secrets —
+				even over the public internet.
 			</li>
 			<li>
-				<h3><svg class="inline" fill="#e0e0e0"><use href="../assets/vault.svg" /></svg> Strong Encryption</h3>
-				Messages are protected using our <b>powerful unique encryption algorithm</b> called <q>MACE</q>. You can find more information about it in the <a href="https://github.com/MHSarmadi/MACE" target="_blank">MACE GitHub repository</a>.
+				<h3><svg class="inline" fill="#e0e0e0">
+						<use href="../assets/vault.svg" />
+					</svg> Strong Encryption</h3>
+				Messages are protected using our <b>powerful unique encryption algorithm</b> called <q>MACE</q>. You can
+				find more information about it in the <a href="https://github.com/MHSarmadi/MACE" target="_blank">MACE
+					GitHub repository</a>.
 			</li>
 			<li>
 				<h3>Digital Signatures</h3>
-				Every message can be cryptographically signed (Ed25519), allowing clients to verify authenticity of <b>others</b> and <b>the server</b>.
+				Every message can be cryptographically signed (Ed25519), allowing clients to verify authenticity of
+				<b>others</b> and <b>the server</b>.
 			</li>
 			<li>
 				<h3>Key Derivation & Protection</h3>
-				Passwords and secrets are hardened using modern memory-hard algorithms (Argon2) to resist brute-force attacks.
+				Passwords and secrets are hardened using modern memory-hard algorithms (Argon2) to resist brute-force
+				attacks.
 			</li>
 			<li>
 				<h3>Integrity & Verification Layers</h3>
@@ -253,7 +302,7 @@ function goto_session() {
 		<h2>What’s Next?</h2>
 		<p>
 			Before you can start using Umbra, your client needs to establish a secure session.
-			<br/>
+			<br />
 			This process will:
 		</p>
 		<ul>
@@ -272,34 +321,73 @@ function goto_session() {
 		</large-button>
 	</div>
 	<div class="session-init" v-else-if="current_page == 'SessionInit'">
-		<h1 style="margin-top: 0;"><svg class="inline" fill="#e0e0e0"><use href="../assets/locked.svg" /></svg> Establishing Secure Session...</h1>
+		<h1 style="margin-top: 0;"><svg class="inline" fill="#e0e0e0">
+				<use href="../assets/locked.svg" />
+			</svg> Establishing Secure Session...</h1>
 		<p>
-			Umbra is now setting up your secure session. This process may take a moment as we generate cryptographic keys and prove you are not a robot.
-			<br/><br/>
+			Umbra is now setting up your secure session. This process may take a moment as we generate cryptographic
+			keys and prove you are not a robot.
+			<br /><br />
 			Please wait while we ensure that your communication will be private and secure.
 		</p>
 		<ul class="steps">
-			<li :class="`${current_step! > 0 ? 'done' : ((step_failed && current_step == 0) ? 'failed' : (!step_failed ? 'loading' : ''))}${current_step == 0 ? ' active' : ''}`">Generating session key pairs...</li>
-			<li :class="`${current_step! > 1 ? 'done' : ((step_failed && current_step == 1) ? 'failed' : (!step_failed ? 'loading' : ''))}${current_step == 1 ? ' active' : ''}`">Executing first handshake with the server...</li>
-			<li :class="`${current_step! > 2 ? 'done' : ((step_failed && current_step == 2) ? 'failed' : (!step_failed ? 'loading' : ''))}${current_step == 2 ? ' active' : ''}`">
-				Cryptographic level of anti-bot assurance...	
-				<progress-bar v-if="current_step == 2" style="margin-left: 20px;" :percentage="pow_percent" size="large" />
+			<li
+				:class="`${current_step! > 0 ? 'done' : ((step_failed && current_step == 0) ? 'failed' : (!step_failed ? 'loading' : ''))}${current_step == 0 ? ' active' : ''}`">
+				Generating session key pairs...</li>
+			<li
+				:class="`${current_step! > 1 ? 'done' : ((step_failed && current_step == 1) ? 'failed' : (!step_failed ? 'loading' : ''))}${current_step == 1 ? ' active' : ''}`">
+				Executing first handshake with the server...</li>
+			<li
+				:class="`${current_step! > 2 ? 'done' : ((step_failed && current_step == 2) ? 'failed' : (!step_failed ? 'loading' : ''))}${current_step == 2 ? ' active' : ''}`">
+				Cryptographic level of anti-bot assurance...
+				<progress-bar v-if="current_step == 2" style="margin-left: 20px;" :percentage="pow_percent"
+					size="large" />
 			</li>
 		</ul>
-		<hr v-if="current_step! >= 2"/>
-		<div v-if="current_step! >= 2" style="display: flex; flex-direction: column; align-items: center; gap: 10px;">
-			<p>Meanwhile, please solve the CAPTCHA below to additionally prove you are a human:</p>
-			<img :src="captcha_challenge_image" alt="CAPTCHA Challenge" style="width: 350px; margin-top: 10px; border-radius: var(--border-radius-md); pointer-events: none; user-select: none;" @contextmenu.prevent="" @drag.prevent="" @dragstart.prevent="" />
-			<input-field id="captcha_input" v-model="captcha_input" inputmode="numeric" :maxlength="6" style="width: 350px;" label="What's written in the box?" :checkoutable="captcha_input.length == 6 && !captcha_error_msg.length && !captcha_loading" :clearable="!!captcha_error_msg.length && !captcha_loading" :loading="captcha_loading" :disabled="captcha_loading" :readonly="captcha_loading" @checkout="onCaptchaCheckout(captcha_input)" @enter="onCaptchaCheckout(captcha_input)" :error-text="captcha_error_msg.length ? captcha_error_msg : undefined" />
-		</div>
+		<hr v-if="current_step! >= 2" />
+		<transition name="fade-rise">
+			<div v-if="shouldShowCaptchaBox" class="captcha-box">
+				<p>Meanwhile, please solve the CAPTCHA below to additionally prove you are a human:</p>
+				<img :src="captcha_challenge_image" alt="CAPTCHA Challenge" class="captcha-image"
+					@contextmenu.prevent="" @drag.prevent="" @dragstart.prevent="" />
+				<input-field id="captcha_input" v-model="captcha_input" inputmode="numeric" :maxlength="6"
+					style="width: 350px;" label="What's written in the box?"
+					:checkoutable="captcha_input.length == 6 && !captcha_error_msg.length && !captcha_loading && !captcha_verified"
+					:clearable="!!captcha_error_msg.length && !captcha_loading && !captcha_verified"
+					:loading="captcha_loading" :disabled="captcha_loading || captcha_verified"
+					:readonly="captcha_loading || captcha_verified" @checkout="onCaptchaCheckout(captcha_input)"
+					@enter="onCaptchaCheckout(captcha_input)"
+					:error-text="captcha_error_msg.length ? captcha_error_msg : undefined" />
+				<p v-if="captcha_verified" class="captcha-success">{{ captcha_success_msg }}</p>
+			</div>
+		</transition>
+
+		<p v-if="!shouldShowCaptchaBox && captcha_verified" class="captcha-success compact">
+			CAPTCHA Verified.
+		</p>
+
+		<transition name="fade-rise">
+			<div v-if="canProceedToNext" class="next-action">
+				<p class="next-hint">All anti-bot checks are complete. You can continue now.</p>
+				<large-button @click="goto_next_page()">Next</large-button>
+			</div>
+		</transition>
 		<p v-if="step_failed" class="failure-message">
 			{{ failure_message || 'Session initialization failed. Please refresh the page and try again.' }}
+		</p>
+	</div>
+	<div class="session-ready" v-else-if="current_page == 'SessionReady'">
+		<h1 style="margin-top: 0;">
+			<svg class="inline" fill="#e0e0e0">
+				<use href="../assets/check2.svg" />
+			</svg> Session Ready</h1>
+		<p>
+			Your secure session has been established successfully. You are ready for the next part of the flow.
 		</p>
 	</div>
 </template>
 
 <style scoped lang="less">
-
 @import url(../style.less);
 
 .hello-umbra {
@@ -333,6 +421,54 @@ function goto_session() {
 	.scroll-container();
 }
 
+.session-ready {
+	@w1: calc(100vw - 60px);
+	@w2: max(40vw, 640px);
+	width: min(@w1, @w2);
+	padding: 20px;
+	border-radius: var(--border-radius-lg);
+	background-color: var(--secondary-bg);
+	box-shadow: 0 0 10px var(--shadow-color);
+}
+
+.captcha-box {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 10px;
+}
+
+.captcha-image {
+	width: 350px;
+	margin-top: 10px;
+	border-radius: var(--border-radius-md);
+	pointer-events: none;
+	user-select: none;
+}
+
+.captcha-success {
+	margin: 0;
+	color: var(--main-highlight-color-4);
+	.bolder();
+}
+
+.captcha-success.compact {
+	margin-top: 8px;
+}
+
+.next-action {
+	margin-top: 16px;
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: 10px;
+}
+
+.next-hint {
+	margin: 0;
+	color: var(--text-color);
+}
+
 .steps {
 	list-style: none;
 	padding-left: 1.5em;
@@ -349,6 +485,7 @@ function goto_session() {
 		&:not(.active) {
 			color: var(--comment-color);
 		}
+
 		&.active {
 			.bolder();
 		}
@@ -362,6 +499,7 @@ function goto_session() {
 			background-repeat: no-repeat;
 			background-position: center;
 		}
+
 		&.loading::before {
 			border: 2px solid #ccc;
 			border-top-color: #555;
@@ -370,12 +508,14 @@ function goto_session() {
 			left: -1.5em;
 			animation: spin 1s linear infinite;
 		}
+
 		&.done::before {
 			background-image: url("/icons/check2.svg");
 			top: 0.1em;
 			left: -1em;
 			font-size: 1.5em;
 		}
+
 		&.failed::before {
 			background-image: url("/icons/danger.svg");
 			top: 0.1em;
@@ -389,9 +529,41 @@ function goto_session() {
 	from {
 		transform: rotate(0deg);
 	}
+
 	to {
 		transform: rotate(360deg);
 	}
 }
 
+@keyframes fade-rise-in {
+	from {
+		opacity: 0;
+		transform: translateY(10px);
+	}
+
+	to {
+		opacity: 1;
+		transform: translateY(0);
+	}
+}
+
+@keyframes fade-rise-out {
+	from {
+		opacity: 1;
+		transform: translateY(0);
+	}
+
+	to {
+		opacity: 0;
+		transform: translateY(-8px);
+	}
+}
+
+.fade-rise-enter-active {
+	animation: fade-rise-in 0.28s ease;
+}
+
+.fade-rise-leave-active {
+	animation: fade-rise-out 0.22s ease;
+}
 </style>
