@@ -31,8 +31,13 @@ const show_captcha_box = ref<boolean>(true);
 let captchaSuccessTimer: ReturnType<typeof setTimeout> | null = null;
 
 const isPowCompleted = computed<boolean>(() => current_step.value !== null && current_step.value > 2);
-const canProceedToNext = computed<boolean>(() => isPowCompleted.value && captcha_verified.value && !step_failed.value);
+const canProceedToNext = computed<boolean>(() => isPowCompleted.value && captchaPanelState.value === 'verified' && !step_failed.value);
 const shouldShowCaptchaBox = computed<boolean>(() => current_step.value !== null && current_step.value >= 2 && show_captcha_box.value);
+const captchaPanelState = computed<'form' | 'verified' | 'none'>(() => {
+	if (shouldShowCaptchaBox.value) return 'form';
+	else if (captcha_verified.value) return 'verified';
+	else return 'none';
+});
 
 function resetCaptchaSuccessTimer() {
 	if (captchaSuccessTimer) {
@@ -138,7 +143,7 @@ workerRouter.value['CheckoutCaptcha'] = (event: MessageEvent) => {
 		resetCaptchaSuccessTimer();
 		captchaSuccessTimer = setTimeout(() => {
 			show_captcha_box.value = false;
-		}, 1400);
+		}, 2400);
 	} else if (event.data.error !== 'Wrong captcha solution') {
 		console.error("Decrypting the Session Token failed:", event.data.error);
 	} else {
@@ -205,10 +210,15 @@ function goto_session() {
 </script>
 
 <template>
-	<div class="hello-umbra" v-if="current_page == 'HelloUmbra'">
-		<h1 style="margin-top: 0;"><svg class="inline" fill="#e0e0e0">
+	<transition name="page-swap" mode="out-in">
+		<div :key="current_page">
+	<div class="hello-umbra page-panel animate-in" v-if="current_page == 'HelloUmbra'">
+		<h1 style="margin-top: 0;">
+			<svg class="inline" fill="#e0e0e0">
 				<use href="../assets/locked.svg" />
-			</svg> Welcome to <i style="color: var(--main-highlight-color-3);">Umbra</i></h1>
+			</svg>
+			Welcome to <i style="color: var(--main-highlight-color-3);">Umbra</i>
+		</h1>
 		<h2>Welcome — and thank you for being here.</h2>
 		<p>
 			Umbra is a privacy-first communication platform built for people who believe that private conversations
@@ -320,7 +330,7 @@ function goto_session() {
 			Let’s Go!
 		</large-button>
 	</div>
-	<div class="session-init" v-else-if="current_page == 'SessionInit'">
+	<div class="session-init page-panel animate-in" v-else-if="current_page == 'SessionInit'">
 		<h1 style="margin-top: 0;"><svg class="inline" fill="#e0e0e0">
 				<use href="../assets/locked.svg" />
 			</svg> Establishing Secure Session...</h1>
@@ -344,56 +354,80 @@ function goto_session() {
 					size="large" />
 			</li>
 		</ul>
-		<hr v-if="current_step! >= 2" />
 		<transition name="fade-rise">
-			<div v-if="shouldShowCaptchaBox" class="captcha-box">
-				<p>Meanwhile, please solve the CAPTCHA below to additionally prove you are a human:</p>
-				<img :src="captcha_challenge_image" alt="CAPTCHA Challenge" class="captcha-image"
-					@contextmenu.prevent="" @drag.prevent="" @dragstart.prevent="" />
-				<input-field id="captcha_input" v-model="captcha_input" inputmode="numeric" :maxlength="6"
-					style="width: 350px;" label="What's written in the box?"
-					:checkoutable="captcha_input.length == 6 && !captcha_error_msg.length && !captcha_loading && !captcha_verified"
-					:clearable="!!captcha_error_msg.length && !captcha_loading && !captcha_verified"
-					:loading="captcha_loading" :disabled="captcha_loading || captcha_verified"
-					:readonly="captcha_loading || captcha_verified" @checkout="onCaptchaCheckout(captcha_input)"
-					@enter="onCaptchaCheckout(captcha_input)"
-					:error-text="captcha_error_msg.length ? captcha_error_msg : undefined" />
-				<p v-if="captcha_verified" class="captcha-success">{{ captcha_success_msg }}</p>
-			</div>
+			<hr />
 		</transition>
+		<div class="captcha-transition-host">
+			<transition name="captcha-swap" mode="out-in">
+				<div v-if="captchaPanelState === 'form'" key="captcha-form" class="captcha-box">
+					<p>Meanwhile, please solve the CAPTCHA below to additionally prove you are a human:</p>
+					<img :src="captcha_challenge_image" alt="CAPTCHA Challenge" class="captcha-image"
+						@contextmenu.prevent="" @drag.prevent="" @dragstart.prevent="" />
+					
+					<input-field id="captcha_input" v-model="captcha_input" inputmode="numeric" :maxlength="6"
+						v-if="!captcha_verified"
+						style="width: 350px;" label="What's written in the box?"
+						:checkoutable="captcha_input.length == 6 && !captcha_error_msg.length && !captcha_loading && !captcha_verified"
+						:clearable="!!captcha_error_msg.length && !captcha_loading && !captcha_verified"
+						:loading="captcha_loading" :disabled="captcha_loading || captcha_verified"
+						:readonly="captcha_loading || captcha_verified" @checkout="onCaptchaCheckout(captcha_input)"
+						@enter="onCaptchaCheckout(captcha_input)"
+						:error-text="captcha_error_msg.length ? captcha_error_msg : undefined" />
+					<transition name="fade-rise">
+						<p v-if="captcha_verified" class="captcha-success">{{ captcha_success_msg }}</p>
+					</transition>
+				</div>
+				<p v-else-if="captchaPanelState === 'verified'" key="captcha-verified" class="captcha-success compact">
+					CAPTCHA Verified.
+				</p>
+			</transition>
+		</div>
 
-		<p v-if="!shouldShowCaptchaBox && captcha_verified" class="captcha-success compact">
-			CAPTCHA Verified.
-		</p>
-
-		<transition name="fade-rise">
-			<div v-if="canProceedToNext" class="next-action">
-				<p class="next-hint">All anti-bot checks are complete. You can continue now.</p>
-				<large-button @click="goto_next_page()">Next</large-button>
-			</div>
-		</transition>
+		<div v-if="canProceedToNext" class="next-action">
+			<h3 class="next-hint">All anti-bot checks are complete. You can continue now.</h3>
+			<large-button @click="goto_next_page()">Next</large-button>
+		</div>
 		<p v-if="step_failed" class="failure-message">
 			{{ failure_message || 'Session initialization failed. Please refresh the page and try again.' }}
 		</p>
 	</div>
-	<div class="session-ready" v-else-if="current_page == 'SessionReady'">
+	<div class="session-ready page-panel animate-in" v-else-if="current_page == 'SessionReady'">
 		<h1 style="margin-top: 0;">
 			<svg class="inline" fill="#e0e0e0">
 				<use href="../assets/check2.svg" />
-			</svg> Session Ready</h1>
+			</svg>
+			Session Ready
+		</h1>
 		<p>
 			Your secure session has been established successfully. You are ready for the next part of the flow.
 		</p>
+		<p>
+			Now, you can either Login or Signup to start using Umbra.
+		</p>
+		<p>
+			The point is, once you are logged in your account in either way, your session immediatly locks to that account.
+			It means whenever you proceed to Logout and re-Login, you need to re-do the session initialization process again.
+		</p>
 	</div>
+		</div>
+	</transition>
 </template>
 
 <style scoped lang="less">
 @import url(../style.less);
 
+.page-panel {
+	position: relative;
+	overflow: hidden;
+}
+
 .hello-umbra {
-	background-color: var(--secondary-bg);
+	background:
+		radial-gradient(120% 90% at 100% -10%, #26a69a66 0%, transparent 62%),
+		radial-gradient(100% 100% at -10% 105%, #007fff4d 0%, transparent 72%),
+		linear-gradient(165deg, #151515 0%, #0d0d0d 100%);
 	border-radius: var(--border-radius-lg);
-	box-shadow: 0 0 10px var(--shadow-color);
+	box-shadow: 0 20px 44px #0000006e;
 	@w1: calc(100vw - 60px);
 	@w2: max(40vw, 640px);
 	width: min(@w1, @w2);
@@ -401,8 +435,14 @@ function goto_session() {
 	@h2: max(40dvh, 800px);
 	height: min(@h1, @h2);
 	padding: 20px;
-	border-radius: var(--border-radius-md);
 	.scroll-container();
+	background-size: 150% 150%, 160% 160%, 140% 140%;
+	animation: panel-gradient-drift 14s ease-in-out infinite alternate;
+
+	h1 {
+		border-bottom: 0;
+		padding-bottom: 0;
+	}
 
 	li {
 		text-align: justify;
@@ -410,25 +450,43 @@ function goto_session() {
 }
 
 .session-init {
+	background:
+		radial-gradient(120% 90% at 100% -10%, #26a69a66 0%, transparent 62%),
+		radial-gradient(100% 100% at -10% 105%, #007fff4d 0%, transparent 72%),
+		linear-gradient(165deg, #151515 0%, #0d0d0d 100%);
 	@w1: calc(100vw - 60px);
 	@w2: max(40vw, 720px);
 	width: min(@w1, @w2);
 	@h1: calc(100dvh - 60px);
-	@h2: max(40dvh, 800px);
+	@h2: max(40dvh, 560px);
 	height: min(@h1, @h2);
 	padding: 20px;
-	border-radius: var(--border-radius-md);
-	.scroll-container();
+	border-radius: var(--border-radius-lg);
+	overflow: hidden;
+	box-shadow: 0 14px 40px #00000057;
+	background-size: 140% 140%, 130% 130%;
+	animation: panel-gradient-drift 16s ease-in-out infinite alternate-reverse;
 }
 
 .session-ready {
+	background:
+		radial-gradient(120% 90% at 100% -10%, #26a69a66 0%, transparent 62%),
+		radial-gradient(100% 100% at -10% 105%, #007fff4d 0%, transparent 72%),
+		linear-gradient(165deg, #151515 0%, #0d0d0d 100%);
 	@w1: calc(100vw - 60px);
 	@w2: max(40vw, 640px);
 	width: min(@w1, @w2);
 	padding: 20px;
 	border-radius: var(--border-radius-lg);
-	background-color: var(--secondary-bg);
-	box-shadow: 0 0 10px var(--shadow-color);
+	overflow: hidden;
+	box-shadow: 0 18px 42px #00000066;
+	background-size: 150% 150%, 130% 130%, 140% 140%;
+	animation: panel-gradient-drift 13s ease-in-out infinite alternate;
+
+	h1 {
+		border-bottom: 0;
+		padding-bottom: 0;
+	}
 }
 
 .captcha-box {
@@ -436,6 +494,10 @@ function goto_session() {
 	flex-direction: column;
 	align-items: center;
 	gap: 10px;
+}
+
+.captcha-transition-host {
+	min-height: 42px;
 }
 
 .captcha-image {
@@ -468,6 +530,46 @@ function goto_session() {
 	margin: 0;
 	color: var(--text-color);
 }
+
+.animate-in {
+	& > * {
+		opacity: 0;
+		animation: content-rise 0.5s ease forwards;
+	}
+
+	& > :nth-child(1) {
+		animation-delay: 0.05s;
+	}
+	
+	& > :nth-child(2) {
+		animation-delay: 0.1s;
+	}
+	
+	& > :nth-child(3) {
+		animation-delay: 0.15s;
+	}
+	
+	& > :nth-child(4) {
+		animation-delay: 0.2s;
+	}
+	
+	& > :nth-child(5) {
+		animation-delay: 0.25s;
+	}
+	
+	& > :nth-child(6) {
+		animation-delay: 0.3s;
+	}
+	
+	& > :nth-child(7) {
+		animation-delay: 0.35s;
+	}
+	
+	& > :nth-child(8) {
+		animation-delay: 0.4s;
+	}
+}
+
 
 .steps {
 	list-style: none;
@@ -559,11 +661,99 @@ function goto_session() {
 	}
 }
 
+@keyframes fade-rise-lazy-in {
+	from {
+		opacity: 0;
+		transform: translateY(10px);
+	}
+
+	30% {
+		opacity: 0;
+		transform: translateY(10px);
+	}
+
+	to {
+		opacity: 1;
+		transform: translateY(0);
+	}
+}
+
+@keyframes fade-rise-lazy-out {
+	from {
+		opacity: 1;
+		transform: translateY(0);
+	}
+
+	30% {
+		opacity: 1;
+		transform: translateY(0);
+	}
+
+	to {
+		opacity: 0;
+		transform: translateY(-8px);
+	}
+}
+
+@keyframes content-rise {
+	from {
+		opacity: 0;
+		transform: translateY(12px);
+	}
+
+	to {
+		opacity: 1;
+		transform: translateY(0);
+	}
+}
+
+@keyframes panel-gradient-drift {
+	0% {
+		background-position: 0% 0%, 100% 100%, 50% 50%;
+	}
+	50% {
+		background-position: 35% 45%, 70% 40%, 60% 75%;
+	}
+	100% {
+		background-position: 100% 100%, 0% 0%, 45% 20%;
+	}
+}
+
+.page-swap-enter-active,
+.page-swap-leave-active {
+	transition: opacity 0.32s ease, transform 0.32s ease;
+}
+
+.page-swap-enter-from,
+.page-swap-leave-to {
+	opacity: 0;
+	transform: translateY(10px) scale(0.99);
+}
+
 .fade-rise-enter-active {
 	animation: fade-rise-in 0.28s ease;
 }
 
 .fade-rise-leave-active {
 	animation: fade-rise-out 0.22s ease;
+}
+
+.fade-rise-lazy-enter-active {
+	animation: fade-rise-lazy-in calc(0.28s * 2) ease;
+}
+
+.fade-rise-lazy-leave-active {
+	animation: fade-rise-lazy-out calc(0.28s * 2) ease;
+}
+
+.captcha-swap-enter-active,
+.captcha-swap-leave-active {
+	transition: opacity 0.24s ease, transform 0.24s ease;
+}
+
+.captcha-swap-enter-from,
+.captcha-swap-leave-to {
+	opacity: 0;
+	transform: translateY(8px);
 }
 </style>
