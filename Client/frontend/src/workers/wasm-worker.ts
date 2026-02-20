@@ -73,7 +73,7 @@ declare global {
 
 		// expected args: progress_id, challenge, salt, memory_mb, iterations, parallelism
 		// return: Promise<error|number>
-		ComputePoW?: (progress_id: string, challenge: Uint8Array<ArrayBuffer>, salt: Uint8Array<ArrayBuffer>, memory_mb: number, iterations: number, parallelism: number) => Promise<string>;
+		ComputePoW?: (progress_id: string, challenge: Uint8Array<ArrayBuffer>, salt: Uint8Array<ArrayBuffer>, memory_mb: number, iterations: number, parallelism: number) => Promise<number>;
 		
 		// expected args: captcha_challenge_numeric, session_token_ciphered, session_id
 		// return: Promise<string> which is the decipehred session_token
@@ -212,11 +212,11 @@ self.onmessage = async (event: MessageEvent) => {
 			event.data.memory_mb,
 			event.data.iterations,
 			event.data.parallelism
-		)?.then((result: string) => {;
+		)?.then((result: number) => {;
 			if (typeof result !== 'number') {
 				throw new Error("ComputePoW did not return a valid result");
 			}
-			
+
 			self.postMessage({ type: 'PoW', success: true, result });
 		})?.catch((err: Error) => {
 			console.error('Error during PoW computation:', err);

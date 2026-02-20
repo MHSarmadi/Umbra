@@ -18,6 +18,7 @@ interface Props {
 	required?: boolean
 	clearable?: boolean
 	checkoutable?: boolean
+	loading?: boolean
 	min?: string | number
 	max?: string | number
 	step?: string | number
@@ -33,6 +34,7 @@ const props = withDefaults(defineProps<Props>(), {
 	size: 'medium',
 	autocomplete: 'off',
 	clearable: false,
+	loading: false,
 	spellcheck: false,
 	placeholder: ''
 })
@@ -174,7 +176,7 @@ function onEnter() {
 				</span>
 			</div>
 
-			<div v-if="$slots.suffix || clearable || isPasswordType || checkoutable" class="right-controls">
+			<div v-if="$slots.suffix || clearable || isPasswordType || checkoutable || loading" class="right-controls">
 				<span v-if="$slots.suffix" class="suffix">
 					<slot name="suffix" />
 				</span>
@@ -208,6 +210,8 @@ function onEnter() {
 				>
 					{{ showPassword ? 'Hide' : 'Show' }}
 				</button>
+
+				<span v-if="loading" class="loading-circle" aria-hidden="true"></span>
 			</div>
 		</div>
 
@@ -304,6 +308,16 @@ function onEnter() {
 		flex-shrink: 0;
 	}
 
+	.loading-circle {
+		display: inline-block;
+		width: 0.8em;
+		height: 0.8em;
+		border: 2px solid #ccc;
+		border-top-color: #555;
+		border-radius: 50%;
+		animation: spin 1s linear infinite;
+	}
+
 	.utility-btn {
 		border: 0;
 		background: var(--hover-bg);
@@ -392,6 +406,15 @@ function onEnter() {
 		.utility-btn {
 			font-size: 0.82rem;
 		}
+	}
+}
+
+@keyframes spin {
+	from {
+		transform: rotate(0deg);
+	}
+	to {
+		transform: rotate(360deg);
 	}
 }
 </style>

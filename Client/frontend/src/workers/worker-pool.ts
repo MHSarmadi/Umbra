@@ -113,7 +113,7 @@ class WorkerInstance {
 			} else {
 				self.postMessage(event.data);
 			}
-		}		
+		}
 	}
 
 	private failStartup(reason: Error) {
@@ -193,36 +193,36 @@ async function createWorker(): Promise<WorkerInstance> {
 		return createWorkerPromise;
 	}
 	createWorkerPromise = (async () => {
-	++workerCounter
-	const workerId = workerCounter;
-	log("===== GENERATING WORKER " + workerId + " =====")
-	const worker = new WasmWorker();
-	const workerInstance = new WorkerInstance(
-		worker,
-		workerId,
-		BASE_URL,
-		() => {
-			void runScheduler();
-		},
-		(reason: Error) => {
-			const index = workerPool.findIndex((w) => w.id === workerId);
-			if (index !== -1) {
-				workerPool.splice(index, 1);
+		++workerCounter
+		const workerId = workerCounter;
+		log("===== GENERATING WORKER " + workerId + " =====")
+		const worker = new WasmWorker();
+		const workerInstance = new WorkerInstance(
+			worker,
+			workerId,
+			BASE_URL,
+			() => {
+				void runScheduler();
+			},
+			(reason: Error) => {
+				const index = workerPool.findIndex((w) => w.id === workerId);
+				if (index !== -1) {
+					workerPool.splice(index, 1);
+				}
+				worker.terminate();
+				console.error(`Worker ${workerId} removed from pool due to fatal error:`, reason);
+				self.postMessage({ type: "WorkerPoolError", success: false, error: String(reason) });
+				void runScheduler();
 			}
+		);
+		try {
+			await workerInstance.ensureReady();
+			workerPool.push(workerInstance);
+		} catch (err) {
 			worker.terminate();
-			console.error(`Worker ${workerId} removed from pool due to fatal error:`, reason);
-			self.postMessage({ type: "WorkerPoolError", success: false, error: String(reason) });
-			void runScheduler();
+			throw err;
 		}
-	);
-	try {
-		await workerInstance.ensureReady();
-		workerPool.push(workerInstance);
-	} catch (err) {
-		worker.terminate();
-		throw err;
-	}
-	return workerInstance;
+		return workerInstance;
 	})();
 	try {
 		return await createWorkerPromise;

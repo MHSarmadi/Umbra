@@ -4,6 +4,7 @@ import LargeButton from '../components/LargeButton.vue';
 import ProgressBar from '../components/ProgressBar.vue';
 import { decodeBase64 } from '../tools/base64';
 import InputField from '../components/InputField.vue';
+import jQuery from 'jquery';
 
 const workerPool = inject<Worker>('worker-pool')!;
 const workerRouter = inject<Ref<{ [key: string]: (data: any) => void }>>('workerRouter')!;
@@ -23,6 +24,7 @@ const pow_id = ref<string>('');
 const captcha_challenge_image = ref<string>('');
 const captcha_input = ref<string>('');
 const captcha_error_msg = ref<string>('');
+const captcha_loading = ref<boolean>(false);
 
 watch(captcha_input, () => {
 	if (captcha_error_msg.value.length) {
@@ -108,12 +110,14 @@ workerRouter.value['CheckoutCaptcha'] = (event: MessageEvent) => {
 		console.warn("Not in the right step for Checking out the CAPTCHA. Ignoring.");
 		return;
 	}
+	captcha_loading.value = false;
 	if (event.data.success) {
 		alert("checked out!");
 	} else if (event.data.error !== 'Wrong captcha solution') {
 		console.error("Decrypting the Session Token failed:", event.data.error);
 	} else {
 		captcha_error_msg.value = 'Incorrect. Retry?';
+		jQuery("#captcha_input").trigger("focus");
 	}
 }
 
@@ -147,9 +151,10 @@ onUnmounted(() => {
 
 function onCaptchaCheckout(value: string | number) {
 	if (typeof value !== 'string' || value.length !== 6 || !/^\d+$/.test(value)) {
-		alert("Please enter a valid 6-digit numeric code from the CAPTCHA challenge.");
+		captcha_error_msg.value = "Please enter a valid 6-digit numeric code from the CAPTCHA challenge.";
 		return;
 	}
+	captcha_loading.value = true;
 	workerPool.postMessage({
 		type: 'CheckoutCaptcha',
 		captcha_response: value
@@ -277,7 +282,7 @@ function goto_session() {
 			<li :class="`${current_step! > 0 ? 'done' : ((step_failed && current_step == 0) ? 'failed' : (!step_failed ? 'loading' : ''))}${current_step == 0 ? ' active' : ''}`">Generating session key pairs...</li>
 			<li :class="`${current_step! > 1 ? 'done' : ((step_failed && current_step == 1) ? 'failed' : (!step_failed ? 'loading' : ''))}${current_step == 1 ? ' active' : ''}`">Executing first handshake with the server...</li>
 			<li :class="`${current_step! > 2 ? 'done' : ((step_failed && current_step == 2) ? 'failed' : (!step_failed ? 'loading' : ''))}${current_step == 2 ? ' active' : ''}`">
-				Running quick anti-bot measures...	
+				Cryptographic level of anti-bot assurance...	
 				<progress-bar v-if="current_step == 2" style="margin-left: 20px;" :percentage="pow_percent" size="large" />
 			</li>
 		</ul>
@@ -285,7 +290,7 @@ function goto_session() {
 		<div v-if="current_step! >= 2" style="display: flex; flex-direction: column; align-items: center; gap: 10px;">
 			<p>Meanwhile, please solve the CAPTCHA below to additionally prove you are a human:</p>
 			<img :src="captcha_challenge_image" alt="CAPTCHA Challenge" style="width: 350px; margin-top: 10px; border-radius: var(--border-radius-md); pointer-events: none; user-select: none;" @contextmenu.prevent="" @drag.prevent="" @dragstart.prevent="" />
-			<input-field v-model="captcha_input" inputmode="numeric" :maxlength="6" style="width: 350px;" label="What's written in the box?" :checkoutable="captcha_input.length == 6 && !captcha_error_msg.length" :clearable="!!captcha_error_msg.length" @checkout="onCaptchaCheckout(captcha_input)" :error-text="captcha_error_msg.length ? captcha_error_msg : undefined" />
+			<input-field id="captcha_input" v-model="captcha_input" inputmode="numeric" :maxlength="6" style="width: 350px;" label="What's written in the box?" :checkoutable="captcha_input.length == 6 && !captcha_error_msg.length && !captcha_loading" :clearable="!!captcha_error_msg.length && !captcha_loading" :loading="captcha_loading" :disabled="captcha_loading" :readonly="captcha_loading" @checkout="onCaptchaCheckout(captcha_input)" @enter="onCaptchaCheckout(captcha_input)" :error-text="captcha_error_msg.length ? captcha_error_msg : undefined" />
 		</div>
 		<p v-if="step_failed" class="failure-message">
 			{{ failure_message || 'Session initialization failed. Please refresh the page and try again.' }}
@@ -302,7 +307,7 @@ function goto_session() {
 	border-radius: var(--border-radius-lg);
 	box-shadow: 0 0 10px var(--shadow-color);
 	@w1: calc(100vw - 60px);
-	@w2: max(40vw, 650px);
+	@w2: max(40vw, 640px);
 	width: min(@w1, @w2);
 	@h1: calc(100dvh - 60px);
 	@h2: max(40dvh, 800px);
@@ -318,7 +323,7 @@ function goto_session() {
 
 .session-init {
 	@w1: calc(100vw - 60px);
-	@w2: max(40vw, 650px);
+	@w2: max(40vw, 720px);
 	width: min(@w1, @w2);
 	@h1: calc(100dvh - 60px);
 	@h2: max(40dvh, 800px);

@@ -515,6 +515,15 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@types/jquery@npm:^3.5.33":
+  version: 3.5.33
+  resolution: "@types/jquery@npm:3.5.33"
+  dependencies:
+    "@types/sizzle": "npm:*"
+  checksum: 10c0/d96c42762b7370ddf3b81cdad436a79d275e0ff09e2f4d7fbf2bbd8f97acef4110a11f1c3cb683195a1eba4fd9959e59d73f84d56ce2c010907a2bea696eb057
+  languageName: node
+  linkType: hard
+
 "@types/less@npm:^3.0.8":
   version: 3.0.8
   resolution: "@types/less@npm:3.0.8"
@@ -528,6 +537,13 @@ __metadata:
   dependencies:
     undici-types: "npm:~7.16.0"
   checksum: 10c0/89559ea0de5c8c2da051b384f2cd3161012446816e05d18841838f814e57eb1865f000622e903f08d14f5242736063ed4003a4a359730fdd367e35e2122a8fce
+  languageName: node
+  linkType: hard
+
+"@types/sizzle@npm:*":
+  version: 2.3.10
+  resolution: "@types/sizzle@npm:2.3.10"
+  checksum: 10c0/d43ec1cd0b5e1f66b1abeaf359608853629cd3d6b8dc8b3b40b85a5ee2ce149a4485ccd7eee5c58b5a2814d384f5a951f1dab5d49041ad83457270cb2bc66fe7
   languageName: node
   linkType: hard
 
@@ -1061,11 +1077,12 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "frontend@workspace:."
   dependencies:
+    "@types/jquery": "npm:^3.5.33"
     "@types/less": "npm:^3.0.8"
     "@types/node": "npm:^25.2.0"
     "@vitejs/plugin-vue": "npm:^6.0.1"
     "@vue/tsconfig": "npm:^0.8.1"
-    jQuery: "npm:^1.7.4"
+    jquery: "npm:^4.0.0"
     less: "npm:^4.5.1"
     typescript: "npm:~5.9.3"
     vite: "npm:^7.2.4"
@@ -1208,10 +1225,10 @@ __metadata:
   languageName: node
   linkType: hard
 
-"jQuery@npm:^1.7.4":
-  version: 1.7.4
-  resolution: "jQuery@npm:1.7.4"
-  checksum: 10c0/a62072d0ce809f0523735ad9e725f489489c53feed59fddf44f104c08852c22f8cd3eacaa8b54beafb74e3dd1b8270bb1fd7ecefdbdb2575ab2069edad7ee50c
+"jquery@npm:^4.0.0":
+  version: 4.0.0
+  resolution: "jquery@npm:4.0.0"
+  checksum: 10c0/06d8d0f51121af5a691f8b59c74823157bb5b60eea915b30eaa920d6c0ffd91e60ba81e9b97bd8203f331f9dd8d0ec9a4b010935ea314bdd2f15453c29bc780b
   languageName: node
   linkType: hard
 
