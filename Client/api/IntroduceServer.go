@@ -118,12 +118,13 @@ func IntroduceServer() {
 
 				// 4. parse JSON
 				type SessionInitRawPayload struct {
-					SessionUUID      string         `json:"session_id"`
-					CaptchaChallenge string         `json:"captcha_challenge"`
-					PoWChallenge     string         `json:"pow_challenge"`
-					PowParams        map[string]any `json:"pow_params"`
-					PoWSalt          string         `json:"pow_salt"`
-					SessionToken     string         `json:"session_token_ciphered"`
+					SessionUUID               string         `json:"session_id"`
+					CaptchaChallenge          string         `json:"captcha_challenge"`
+					PoWChallenge              string         `json:"pow_challenge"`
+					PowParams                 map[string]any `json:"pow_params"`
+					PoWSalt                   string         `json:"pow_salt"`
+					SessionToken              string         `json:"session_token_ciphered"`
+					SessionTokenCipherKeySalt string         `json:"session_token_cipher_key_salt"`
 				}
 				var payloadData SessionInitRawPayload
 				if err := json.Unmarshal(payload_deciphered, &payloadData); err != nil {
@@ -139,6 +140,7 @@ func IntroduceServer() {
 				result.Set("pow_params", payloadData.PowParams)
 				result.Set("pow_salt", payloadData.PoWSalt)
 				result.Set("session_token_ciphered", payloadData.SessionToken)
+				result.Set("session_token_cipher_key_salt", payloadData.SessionTokenCipherKeySalt)
 				result.Set("took_microseconds", duration.Microseconds())
 
 				resolve.Invoke(result)

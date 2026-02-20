@@ -2,6 +2,12 @@
 
 import WasmWorker from "./wasm-worker?worker";
 
+const logging = false;
+
+function log(...args: any) {
+	if (logging) console.log(...args)
+}
+
 function collectTransferables(message: unknown): Transferable[] {
 	if (!message || typeof message !== "object") {
 		return [];
@@ -69,7 +75,7 @@ class WorkerInstance {
 		this.router.set("init", (data: any) => {
 			this.busy = false;
 			if (data?.success) {
-				console.log(`WASM Worker ${this.id} initialized successfully`);
+				log(`WASM Worker ${this.id} initialized successfully`);
 				this.resolveInit();
 				return;
 			}
@@ -78,14 +84,14 @@ class WorkerInstance {
 		this.router.set("setBaseURL", (data: any) => {
 			this.busy = false;
 			if (data?.success) {
-				console.log(`WASM Worker ${this.id} base URL set successfully`);
+				log(`WASM Worker ${this.id} base URL set successfully`);
 				this.resolveBaseURL();
 				return;
 			}
 			this.rejectBaseURL(new Error(`WASM worker ${this.id} setBaseURL failed: ${String(data?.error ?? "Unknown error")}`));
 		})
 		this.router.set("freed", (data: any) => {
-			console.log(this.id, "FREED:", data.processType)
+			log(this.id, "FREED:", data.processType)
 			this.busy = false;
 			this.onFreed();
 		});
@@ -98,7 +104,7 @@ class WorkerInstance {
 		};
 
 		this.worker.onmessage = (event: MessageEvent) => {
-			console.log(this.id, "RECEIVE", event.data)
+			log(this.id, "RECEIVE", event.data)
 			const { type } = event.data;
 			if (!type) {
 				console.warn("Received message without type:", event.data);
@@ -129,7 +135,7 @@ class WorkerInstance {
 	}
 
 	post(message: any) {
-		console.log(this.id, "SEND", message)
+		log(this.id, "SEND", message)
 		if (this.busy) {
 			return false;
 		}
@@ -189,7 +195,7 @@ async function createWorker(): Promise<WorkerInstance> {
 	createWorkerPromise = (async () => {
 	++workerCounter
 	const workerId = workerCounter;
-	console.log("===== GENERATING WORKER " + workerId + " =====")
+	log("===== GENERATING WORKER " + workerId + " =====")
 	const worker = new WasmWorker();
 	const workerInstance = new WorkerInstance(
 		worker,

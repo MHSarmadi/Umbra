@@ -19,7 +19,8 @@ type Session struct {
 
 	ServerSoul [32]byte `json:"server_soul"`
 
-	SessionToken [24]byte `json:"session_token"`
+	SessionToken              [24]byte `json:"session_token"`
+	SessionTokenCipherKeySalt [12]byte `json:"session_token_cipher_key_salt"`
 
 	LastNonces   map[string]int64 `json:"last_nonces"`   // int64: unix timestamp "seconds"
 	LastActivity int64            `json:"last_activity"` // int64: unix timestamp "seconds"

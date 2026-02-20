@@ -67,7 +67,8 @@ declare global {
 				iterations: number,
 				parallelism: number
 			},
-			session_token_ciphered: string
+			session_token_ciphered: string,
+			session_token_cipher_key_salt: string
 		}>;
 
 		// expected args: progress_id, challenge, salt, memory_mb, iterations, parallelism
@@ -76,7 +77,7 @@ declare global {
 		
 		// expected args: captcha_challenge_numeric, session_token_ciphered, session_id
 		// return: Promise<string> which is the decipehred session_token
-		CheckoutCaptcha?: (captcha_solution_numeric: number, session_token_ciphered: Uint8Array<ArrayBuffer>, session_id: Uint8Array<ArrayBuffer>) => Promise<string>;
+		CheckoutCaptcha?: (captcha_solution_numeric: number, session_token_ciphered: Uint8Array<ArrayBuffer>, session_token_cipher_key_salt: Uint8Array<ArrayBuffer>, session_id: Uint8Array<ArrayBuffer>) => Promise<string>;
 	}
 }
 
@@ -185,9 +186,11 @@ self.onmessage = async (event: MessageEvent) => {
 				}
 
 				await storeSecret("session_token_ciphered", decodeBase64(deciphered_payload.session_token_ciphered));
+				await storeSecret("session_token_cipher_key_salt", decodeBase64(deciphered_payload.session_token_cipher_key_salt));
 				await storeSecret("session_id", decodeBase64(deciphered_payload.session_id));
 
 				deciphered_payload.session_token_ciphered = "";
+				deciphered_payload.session_token_cipher_key_salt = "";
 				deciphered_payload.session_id = "";
 
 				self.postMessage({ type: 'IntroduceServer', success: true, payload: deciphered_payload });
@@ -236,13 +239,17 @@ self.onmessage = async (event: MessageEvent) => {
 			if (!session_token_ciphered) {
 				throw new Error("Session token ciphered not found in vault");
 			}
+			const session_token_cipher_key_salt = await retrieveSecret("session_token_cipher_key_salt");
+			if (!session_token_cipher_key_salt) {
+				throw new Error("Session token cipher key salt not found in vault");
+			}
 			const session_id = await retrieveSecret("session_id");
 			if (!session_id) {
 				throw new Error("Session ID not found in vault");
 			}
 
 			// Decipher Session Token
-			const session_token = await self.CheckoutCaptcha?.(captcha_response_numeric, session_token_ciphered, session_id);
+			const session_token = await self.CheckoutCaptcha?.(captcha_response_numeric, session_token_ciphered, session_token_cipher_key_salt, session_id);
 			if (typeof session_token !== 'string') {
 				throw new Error("CheckoutCaptcha did not return a valid session token");
 			}

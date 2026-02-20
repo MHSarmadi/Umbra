@@ -9,15 +9,22 @@ import (
 
 	"github.com/MHSarmadi/Umbra/Client/crypto"
 	"github.com/MHSarmadi/Umbra/Client/tools"
+	"golang.org/x/crypto/argon2"
+)
+
+const (
+	sessTokCiphKeyMemoryMB    = 12
+	sessTokCiphKeyParallelism = 1
+	sessTokCiphKeyIterations  = 24
 )
 
 func CheckoutCaptcha() {
 	js.Global().Set("CheckoutCaptcha", js.FuncOf(func(this js.Value, args []js.Value) any {
-		// expected args: captcha_solution: number, session_token_ciphered: uint8array, session_id: uint8array
-		if len(args) < 3 {
+		// expected args: captcha_solution: number, session_token_ciphered: uint8array, session_token_cipher_key_salt: uint8array, session_id: uint8array
+		if len(args) < 4 {
 			return js.Global().Get("Promise").New(js.FuncOf(func(_ js.Value, promArgs []js.Value) any {
 				reject := promArgs[1]
-				reject.Invoke("At least 3 parameters are required: captcha_solution, session_token_ciphered, session_id")
+				reject.Invoke("At least 4 parameters are required: captcha_solution, session_token_ciphered, session_token_cipher_key_salt, session_id")
 				return nil
 			}))
 		}
@@ -34,8 +41,16 @@ func CheckoutCaptcha() {
 				return nil
 			}))
 		}
+		session_token_cipher_key_salt, err := tools.JsValueToByteSlice(args[2])
+		if err != nil {
+			return js.Global().Get("Promise").New(js.FuncOf(func(_ js.Value, promArgs []js.Value) any {
+				reject := promArgs[1]
+				reject.Invoke("Invalid session_token_cipher_key_salt:" + err.Error())
+				return nil
+			}))
+		}
 
-		session_id, err := tools.JsValueToByteSlice(args[2])
+		session_id, err := tools.JsValueToByteSlice(args[3])
 		if err != nil {
 			return js.Global().Get("Promise").New(js.FuncOf(func(_ js.Value, promArgs []js.Value) any {
 				reject := promArgs[1]
@@ -55,11 +70,13 @@ func CheckoutCaptcha() {
 					}
 				}()
 
+				session_token_cipher_key := argon2.IDKey(captcha_solution_bytes, session_token_cipher_key_salt, sessTokCiphKeyIterations, sessTokCiphKeyMemoryMB*1024, sessTokCiphKeyParallelism, 32)
+
 				session_token_salt := session_token_ciphered_pack[:12]
 				session_token_tag := session_token_ciphered_pack[12 : 12+16]
 				session_token_ciphered := session_token_ciphered_pack[12+16:]
 
-				session_token, valid, err := crypto.MACE_Decrypt_MIXIN_AEAD(captcha_solution_bytes, session_token_ciphered, session_id, session_token_salt, session_token_tag, "@SESSION-TOKEN", 2)
+				session_token, valid, err := crypto.MACE_Decrypt_MIXIN_AEAD(session_token_cipher_key, session_token_ciphered, session_id, session_token_salt, session_token_tag, "@SESSION-TOKEN", 2)
 				if !valid {
 					reject.Invoke("Wrong captcha solution")
 					return

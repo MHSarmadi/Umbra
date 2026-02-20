@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { inject, onUnmounted, ref, type Ref } from 'vue';
+import { inject, onUnmounted, ref, watch, type Ref } from 'vue';
 import LargeButton from '../components/LargeButton.vue';
 import ProgressBar from '../components/ProgressBar.vue';
 import { decodeBase64 } from '../tools/base64';
@@ -22,6 +22,13 @@ const pow_id = ref<string>('');
 
 const captcha_challenge_image = ref<string>('');
 const captcha_input = ref<string>('');
+const captcha_error_msg = ref<string>('');
+
+watch(captcha_input, () => {
+	if (captcha_error_msg.value.length) {
+		captcha_error_msg.value = '';
+	}
+})
 
 workerRouter.value['SessionKeypair'] = (event: MessageEvent) => {
 	if (current_step.value !== 0 && event.data.success) {
@@ -106,7 +113,7 @@ workerRouter.value['CheckoutCaptcha'] = (event: MessageEvent) => {
 	} else if (event.data.error !== 'Wrong captcha solution') {
 		console.error("Decrypting the Session Token failed:", event.data.error);
 	} else {
-		alert("wrong captcha!");
+		captcha_error_msg.value = 'Incorrect. Retry?';
 	}
 }
 
@@ -278,7 +285,7 @@ function goto_session() {
 		<div v-if="current_step! >= 2" style="display: flex; flex-direction: column; align-items: center; gap: 10px;">
 			<p>Meanwhile, please solve the CAPTCHA below to additionally prove you are a human:</p>
 			<img :src="captcha_challenge_image" alt="CAPTCHA Challenge" style="width: 350px; margin-top: 10px; border-radius: var(--border-radius-md); pointer-events: none; user-select: none;" @contextmenu.prevent="" @drag.prevent="" @dragstart.prevent="" />
-			<input-field v-model="captcha_input" inputmode="numeric" :maxlength="6" style="width: 350px;" label="What's written in the box?" :checkoutable="captcha_input.length == 6" @checkout="onCaptchaCheckout(captcha_input)" />
+			<input-field v-model="captcha_input" inputmode="numeric" :maxlength="6" style="width: 350px;" label="What's written in the box?" :checkoutable="captcha_input.length == 6 && !captcha_error_msg.length" :clearable="!!captcha_error_msg.length" @checkout="onCaptchaCheckout(captcha_input)" :error-text="captcha_error_msg.length ? captcha_error_msg : undefined" />
 		</div>
 		<p v-if="step_failed" class="failure-message">
 			{{ failure_message || 'Session initialization failed. Please refresh the page and try again.' }}
