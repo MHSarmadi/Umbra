@@ -157,13 +157,14 @@ self.onmessage = async (event: MessageEvent) => {
 
 				self.postMessage({ type: 'SendSessionKeypair', success: result.ok, response });
 
-				const { payload, server_ed_pubkey, server_x_pubkey, server_x_pubkey_sign, signature } = response;
+				const { payload, server_ed_pubkey, server_x_pubkey, server_x_pubkey_sign, signature, expiry_unix_millisec } = response;
 
 				if (typeof payload !== 'string' || typeof server_ed_pubkey !== 'string' || typeof server_x_pubkey !== 'string' || typeof server_x_pubkey_sign !== 'string' || typeof signature !== 'string') {
 					throw new Error("Invalid PoW response: missing or invalid fields");
 				}
 
 				await Promise.all([
+					Auth.session.setExpiryUnix(new Sensitive(decodeBase64(expiry_unix_millisec))),
 					Auth.session.server.setEdPubKey(new Sensitive(decodeBase64(server_ed_pubkey))),
 					Auth.session.server.setXPubKey(new Sensitive(decodeBase64(server_x_pubkey))),
 				])

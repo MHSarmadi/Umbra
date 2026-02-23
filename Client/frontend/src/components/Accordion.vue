@@ -15,7 +15,11 @@ const props = withDefaults(defineProps<Props>(), {
 	showLessText: 'Show Less'
 });
 
-const expanded = ref(props.initiallyExpanded);
+const expanded = defineModel<boolean>();
+if (expanded.value === undefined) {
+	expanded.value = props.initiallyExpanded;
+}
+
 const contentBodyRef = ref<HTMLElement | null>(null);
 const contentHeight = ref(0);
 let resizeObserver: ResizeObserver | null = null;
@@ -67,10 +71,6 @@ function onContainerClick(event: MouseEvent) {
 	}
 }
 
-function onDoubleClick() {
-	toggleExpansion();
-}
-
 watch(
 	() => expanded.value,
 	async () => {
@@ -100,7 +100,6 @@ onBeforeUnmount(() => {
 		class="accordion focusable"
 		:class="{ expanded: !isCollapsed, collapsed: isCollapsed, collapsible: canToggle }"
 		@click="onContainerClick"
-		@dblclick="onDoubleClick"
 	>
 		<div class="accordion-shell">
 			<div class="accordion-viewport">

@@ -25,7 +25,28 @@ defineEmits<{
 			Whether you’re here out of curiosity, concern for privacy, or a desire for stronger security, you’re
 			in the right place.
 		</p>
+		<h2 style="color: var(--main-highlight-color-4)">
+			By continuing, you agree to begin Umbra’s secure session initialization process.
+		</h2>
+		<large-button @click="$emit('start')">
+			Let’s Go!
+		</large-button>
+		<h2>Technical Notes</h2>
 		<accordion :collapsed-height="320">
+			<h2>What’s Next?</h2>
+			<p>
+				Before you can start using Umbra, your client needs to establish a secure session.
+				<br />
+				This process will:
+			</p>
+			<ul>
+				<li>Generate a unique key pair for your current session</li>
+				<li>Establish a secure connection with the Umbra server</li>
+				<li>Ensure that future requests are authenticated and protected</li>
+			</ul>
+			<p>
+				No messages are sent and no data is shared until this process completes.
+			</p>
 			<h2>What Makes Umbra Different?</h2>
 			<p>
 				Umbra is not just encrypted chat. It is a <q>Security Architecture</q>.
@@ -114,27 +135,6 @@ defineEmits<{
 				All of this happens quietly in the background — your experience remains simple.
 			</p>
 		</accordion>
-
-		<h2>What’s Next?</h2>
-		<p>
-			Before you can start using Umbra, your client needs to establish a secure session.
-			<br />
-			This process will:
-		</p>
-		<ul>
-			<li>Generate a unique key pair for your current session</li>
-			<li>Establish a secure connection with the Umbra server</li>
-			<li>Ensure that future requests are authenticated and protected</li>
-		</ul>
-		<p>
-			No messages are sent and no data is shared until this process completes.
-		</p>
-		<h2 style="color: var(--main-highlight-color-4)">
-			By continuing, you agree to begin Umbra’s secure session initialization process.
-		</h2>
-		<large-button @click="$emit('start')">
-			Let’s Go!
-		</large-button>
 	</div>
 </template>
 

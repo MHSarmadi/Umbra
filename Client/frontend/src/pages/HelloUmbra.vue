@@ -28,6 +28,13 @@ const router = workerRouter;
 const progressByType = progressPercentages;
 
 const currentPage = ref<PageName>('Unspecified');
+const sessionExpiry = ref<Date | null>(null);
+watch(currentPage, async (newPage) => {
+	if (newPage === 'SessionReady') {
+		sessionExpiry.value = await Auth.session.expiryUnix();
+		console.log('Session expiry time:', sessionExpiry.value);
+	}
+});
 Auth.session.ready().then(ready => {
 	if (ready) {
 		currentPage.value = 'SessionReady';
@@ -67,6 +74,9 @@ const captchaVerified = ref(false);
 const captchaSuccessMsg = ref('');
 const showCaptchaBox = ref(true);
 let captchaSuccessTimer: ReturnType<typeof setTimeout> | null = null;
+const sessionExpiredNotice = ref(false);
+const sessionReloadCountdown = ref<number | null>(null);
+let sessionReloadTimer: ReturnType<typeof setInterval> | null = null;
 
 const isPowCompleted = computed<boolean>(() => currentStep.value !== null && currentStep.value > 2);
 const shouldShowCaptchaBox = computed<boolean>(() => currentStep.value !== null && currentStep.value >= 2 && showCaptchaBox.value);
@@ -89,6 +99,15 @@ function resetCaptchaSuccessTimer() {
 	}
 	clearTimeout(captchaSuccessTimer);
 	captchaSuccessTimer = null;
+}
+
+function resetSessionExpiryFlow() {
+	sessionExpiredNotice.value = false;
+	sessionReloadCountdown.value = null;
+	if (sessionReloadTimer) {
+		clearInterval(sessionReloadTimer);
+		sessionReloadTimer = null;
+	}
 }
 
 function failStep(message: string, error?: unknown) {
@@ -253,6 +272,7 @@ onUnmounted(() => {
 	delete router.value.CheckoutCaptcha;
 
 	resetCaptchaSuccessTimer();
+	resetSessionExpiryFlow();
 
 	if (previousPowProgressFunction) {
 		progressByType.value.pow = previousPowProgressFunction;
@@ -275,10 +295,41 @@ function onCaptchaCheckout() {
 }
 
 function goToNextPage() {
+	resetSessionExpiryFlow();
 	currentPage.value = 'SessionReady';
 }
 
+async function onSessionExpired() {
+	if (sessionExpiredNotice.value) {
+		return;
+	}
+
+	sessionExpiredNotice.value = true;
+	sessionReloadCountdown.value = 12;
+
+	try {
+		await Auth.session.logout();
+	} catch (error) {
+		console.error('Failed to logout expired session:', error);
+	}
+
+	sessionReloadTimer = setInterval(() => {
+		if (sessionReloadCountdown.value === null) {
+			return;
+		}
+		sessionReloadCountdown.value -= 1;
+		if (sessionReloadCountdown.value <= 0) {
+			if (sessionReloadTimer) {
+				clearInterval(sessionReloadTimer);
+				sessionReloadTimer = null;
+			}
+			window.location.reload();
+		}
+	}, 1000);
+}
+
 function goToSessionInit() {
+	resetSessionExpiryFlow();
 	currentPage.value = 'SessionInit';
 	currentStep.value = 0;
 	stepFailed.value = false;
@@ -303,7 +354,9 @@ function goToSessionInit() {
 				:captcha-verified="captchaVerified" :captcha-success-msg="captchaSuccessMsg"
 				:can-proceed-to-next="canProceedToNext" @update:captcha-input="captchaInput = $event"
 				@captcha-checkout="onCaptchaCheckout" @next="goToNextPage" />
-			<session-ready-panel v-else-if="currentPage === 'SessionReady'" />
+			<session-ready-panel v-else-if="currentPage === 'SessionReady'" :session-expiry="sessionExpiry"
+				:session-expired-notice="sessionExpiredNotice" :reload-countdown="sessionReloadCountdown"
+				@session-expired="onSessionExpired" />
 		</div>
 	</transition>
 </template>

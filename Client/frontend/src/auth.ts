@@ -1,4 +1,5 @@
 import { useSecureVault } from "./db";
+import { decodeBufferIntoDate } from "./tools/base64";
 
 const { retrieveSecret, storeSecret } = useSecureVault();
 
@@ -36,6 +37,17 @@ const Auth = {
 					this.setSoul(new Sensitive(new Uint8Array(0)))
 				]);
 			}
+		},
+		async expiryUnix(): Promise<Date | null> {
+			const expiry_unix_millisec = await retrieveSecret("session_expiry_unix_millisec");
+			if (expiry_unix_millisec && expiry_unix_millisec.length > 0) {
+				return decodeBufferIntoDate(expiry_unix_millisec);
+			}
+			return null;
+		},
+		async setExpiryUnix(expiry_unix: Sensitive): Promise<void> {
+			await storeSecret("session_expiry_unix_millisec", expiry_unix.value!);
+			expiry_unix.destroy(); // Zero out the sensitive data after storing
 		},
 		async id(): Promise<Sensitive | null> {
 			const id = await retrieveSecret("session_id");

@@ -81,8 +81,34 @@ async function loadVaultKey(): Promise<CryptoKey | null> {
 
 		req.onsuccess = () => {
 			const entry = req.result as VaultKeyEntry | undefined
+			if (entry?.key) {
+				db.close()
+				resolve(entry.key)
+				return
+			}
+
 			db.close()
-			resolve(entry?.key ?? null)
+			void (async () => {
+				try {
+					if (!crypto?.subtle) {
+						throw new Error('No Web Crypto Support by this device.')
+					}
+
+					const newKey = await crypto.subtle.generateKey(
+						{
+							name: 'AES-GCM',
+							length: 256
+						},
+						false,
+						['encrypt', 'decrypt']
+					)
+
+					await saveVaultKey(newKey)
+					resolve(newKey)
+				} catch (err) {
+					reject(err)
+				}
+			})()
 		}
 		req.onerror = (e) => {
 			db.close()

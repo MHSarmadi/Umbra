@@ -22,7 +22,7 @@ import (
 	"golang.org/x/crypto/argon2"
 )
 
-const sessionTTL = 300 * time.Second
+const sessionTTL = 15 * time.Minute
 const maxSessionInitBodyBytes = 8 << 10
 
 const (
@@ -300,6 +300,7 @@ func (c *Controller) SessionInit(w http.ResponseWriter, r *http.Request) {
 			ServerXPubKeySignature string `json:"server_x_pubkey_sign"`
 			Payload                string `json:"payload"`
 			Signature              string `json:"signature"`
+			ExpiresAt              string `json:"expiry_unix_millisec"`
 		}
 		type SessionInitRawPayload struct {
 			SessionUUID               string               `json:"session_id"`
@@ -340,6 +341,9 @@ func (c *Controller) SessionInit(w http.ResponseWriter, r *http.Request) {
 		signature := crypto.Sign(server_soul[:], payload)
 		logger.Tracef("session init response cryptography complete payload_bytes=%d signature_bytes=%d", len(payload), len(signature))
 
+		expiry_unix_millisec_bytes := make([]byte, 8)
+		binary.BigEndian.PutUint64(expiry_unix_millisec_bytes, uint64(session.ExpiresAt.UTC().UnixMilli()))
+
 		response := SessionInitResponse{
 			Status:                 "ok",
 			ServerEdPubKey:         b64(server_ed_pubkey),
@@ -347,6 +351,7 @@ func (c *Controller) SessionInit(w http.ResponseWriter, r *http.Request) {
 			ServerXPubKeySignature: b64(server_x_pubkey_sign),
 			Payload:                b64(payload),
 			Signature:              b64(signature),
+			ExpiresAt:              b64(expiry_unix_millisec_bytes),
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
