@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
+	"io"
 	"math"
 	"net"
 	"net/http"
@@ -21,7 +22,8 @@ import (
 	"golang.org/x/crypto/argon2"
 )
 
-const Expiry_Offset = 300 * time.Second
+const sessionTTL = 300 * time.Second
+const maxSessionInitBodyBytes = 8 << 10
 
 const (
 	sessionInitWindow             = 10 * time.Minute
@@ -109,8 +111,16 @@ func (c *Controller) SessionInit(w http.ResponseWriter, r *http.Request) {
 		body_encoded models_requests.SessionInitRequestEncoded
 		body_decoded models_requests.SessionInitRequestDecoded
 	)
-	if err := json.NewDecoder(r.Body).Decode(&body_encoded); err != nil {
+	r.Body = http.MaxBytesReader(w, r.Body, maxSessionInitBodyBytes)
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&body_encoded); err != nil {
 		logger.Debugf("session init rejected: malformed json body remote=%s err=%v", r.RemoteAddr, err)
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		logger.Debugf("session init rejected: unexpected extra json values remote=%s err=%v", r.RemoteAddr, err)
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
@@ -160,7 +170,11 @@ func (c *Controller) SessionInit(w http.ResponseWriter, r *http.Request) {
 		}
 		if limited {
 			logger.Infof("session init rate-limited for identity=%s retry_after=%ds", trackerID, int64(retryAfter.Seconds()))
-			w.Header().Set("Retry-After", strconv.FormatInt(int64(retryAfter.Seconds()), 10))
+			retryAfterSeconds := int64(math.Ceil(retryAfter.Seconds()))
+			if retryAfterSeconds < 1 {
+				retryAfterSeconds = 1
+			}
+			w.Header().Set("Retry-After", strconv.FormatInt(retryAfterSeconds, 10))
 			http.Error(w, "too many session initialization requests", http.StatusTooManyRequests)
 			return
 		}
@@ -257,7 +271,7 @@ func (c *Controller) SessionInit(w http.ResponseWriter, r *http.Request) {
 			UUID: session_id,
 
 			CreatedAt: now,
-			ExpiresAt: now.Add(Expiry_Offset).UTC(),
+			ExpiresAt: now.Add(sessionTTL).UTC(),
 
 			ClientEdPubKey: [32]byte(body_decoded.ClientEdPubKey),
 			ClientXPubKey:  [32]byte(body_decoded.ClientXPubKey),
@@ -274,7 +288,7 @@ func (c *Controller) SessionInit(w http.ResponseWriter, r *http.Request) {
 
 		if err := c.storage.PutSession(c.ctx, &session); err != nil {
 			logger.Errorf("session init failed persisting session identity=%s: %v", trackerID, err)
-			http.Error(w, "could not store seesion", http.StatusInternalServerError)
+			http.Error(w, "could not store session", http.StatusInternalServerError)
 			return
 		}
 		logger.Tracef("session init session persisted session_id_b64_len=%d", len(b64(session.UUID[:])))

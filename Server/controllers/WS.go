@@ -2,11 +2,14 @@ package controllers
 
 import (
 	"net/http"
-
-	"github.com/olahol/melody"
 )
 
 func (c *Controller) WS(w http.ResponseWriter, r *http.Request) {
-	m := melody.New()
-	m.HandleRequest(w, r)
+	if c.ws == nil {
+		http.Error(w, "websocket server unavailable", http.StatusInternalServerError)
+		return
+	}
+	if err := c.ws.HandleRequest(w, r); err != nil {
+		http.Error(w, "websocket handshake failed", http.StatusBadRequest)
+	}
 }

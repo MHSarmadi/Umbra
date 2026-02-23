@@ -23,5 +23,7 @@ func (c *Controller) DemoCaptcha(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Expires", "0")
 	w.WriteHeader(http.StatusOK)
 
-	_, _ = w.Write(pngBytes)
+	if _, err := w.Write(pngBytes); err != nil {
+		return
+	}
 }
