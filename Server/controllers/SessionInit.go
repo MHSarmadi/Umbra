@@ -246,6 +246,7 @@ func (c *Controller) SessionInit(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "could not read entropy", http.StatusInternalServerError)
 			return
 		}
+		logger.Verbosef("session token randomly generated \"%s\"", b64(session_token[:]))
 		session_token_ciphered, session_token_salt, session_token_tag := crypto.MACE_Encrypt_MIXIN_AEAD(session_token_cipher_key, session_token[:], session_id[:], "@SESSION-TOKEN", 2, false)
 		logger.Tracef("session init session-token encryption produced cipher_bytes=%d salt_bytes=%d tag_bytes=%d", len(session_token_ciphered), len(session_token_salt), len(session_token_tag))
 

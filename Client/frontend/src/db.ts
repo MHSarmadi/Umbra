@@ -167,6 +167,9 @@ export function useSecureVault() {
 	async function storeSecret(id: string, secret: Uint8Array<ArrayBuffer>): Promise<void> {
 		try {
 			const vaultKey = await createOrGetVaultKey()
+			if (!secret.length) {
+				secret = new Uint8Array([0]);
+			}
 			const encrypted = await encryptSecret(secret, vaultKey)
 
 			// Zero original secret immediately
@@ -210,7 +213,9 @@ export function useSecureVault() {
 
 			if (!payload) return null
 
-			return decryptSecret(payload, vaultKey)
+			const decrypted = await decryptSecret(payload, vaultKey)
+			
+			return (decrypted.length > 1 || (decrypted.length == 1 && decrypted[0] !== 0)) ? decrypted : new Uint8Array(0);
 		} catch (err) {
 			error.value = err instanceof Error ? err.message : 'Unknown error'
 			throw err

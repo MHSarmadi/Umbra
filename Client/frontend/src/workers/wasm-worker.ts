@@ -1,9 +1,9 @@
 /// <reference lib="webworker" />
 
 import { decodeBase64 } from "../tools/base64";
-import { useSecureVault } from "../db";
+import { useAuth, Sensitive } from "../auth";
 
-const { storeSecret, retrieveSecret } = useSecureVault();
+const Auth = useAuth();
 
 let goRuntimePromise: Promise<void> | null = null;
 async function ensureGoRuntimeLoaded(): Promise<void> {
@@ -124,8 +124,8 @@ self.onmessage = async (event: MessageEvent) => {
 				throw new Error("SessionKeypair did not return a valid result");
 			}
 
-			await storeSecret("session_soul", pubkeys.soul);
-
+			await Auth.session.setSoul(new Sensitive(pubkeys.soul));
+			
 			// Remove sensitive data from memory
 			pubkeys.soul.fill(0);
 			
@@ -163,32 +163,38 @@ self.onmessage = async (event: MessageEvent) => {
 					throw new Error("Invalid PoW response: missing or invalid fields");
 				}
 
-				const server_ed_pubkey_bytes = decodeBase64(server_ed_pubkey);
-				const server_x_pubkey_bytes = decodeBase64(server_x_pubkey);
-				const server_x_pubkey_sign_bytes = decodeBase64(server_x_pubkey_sign);
+				await Promise.all([
+					Auth.session.server.setEdPubKey(new Sensitive(decodeBase64(server_ed_pubkey))),
+					Auth.session.server.setXPubKey(new Sensitive(decodeBase64(server_x_pubkey))),
+				])
 
-				await storeSecret("server_ed_pubkey", server_ed_pubkey_bytes);
-				await storeSecret("server_x_pubkey", server_x_pubkey_bytes);
-				await storeSecret("server_x_pubkey_sign", server_x_pubkey_sign_bytes);
-
-				const soul = await retrieveSecret("session_soul");
+				const soul = await Auth.session.soul();
 				if (!soul) {
 					throw new Error("Session soul not found in vault");
 				}
 				
-				const deciphered_payload = await self.IntroduceServer?.(soul, server_ed_pubkey, server_x_pubkey, server_x_pubkey_sign, payload, signature);
+				const deciphered_payload = await self.IntroduceServer?.(soul.value!, server_ed_pubkey, server_x_pubkey, server_x_pubkey_sign, payload, signature);
 
 				// Remove sensitive data from memory
-				soul.fill(0);
+				soul.destroy();
+				response.server_ed_pubkey = "";
+				delete response.server_ed_pubkey;
+				response.server_x_pubkey = "";
+				delete response.server_x_pubkey;
+				response.server_x_pubkey_sign = "";
+				delete response.server_x_pubkey_sign;
 
 				if (!deciphered_payload || typeof deciphered_payload !== 'object' || !('session_token_ciphered' in deciphered_payload)) {
 					throw new Error("IntroduceServer did not return a valid session token ciphered");
 				}
 
-				await storeSecret("session_token_ciphered", decodeBase64(deciphered_payload.session_token_ciphered));
-				await storeSecret("session_token_cipher_key_salt", decodeBase64(deciphered_payload.session_token_cipher_key_salt));
-				await storeSecret("session_id", decodeBase64(deciphered_payload.session_id));
+				await Promise.all([
+					Auth.session.temp.setTokenCiphered(new Sensitive(decodeBase64(deciphered_payload.session_token_ciphered))),
+					Auth.session.temp.setTokenCipherKeySalt(new Sensitive(decodeBase64(deciphered_payload.session_token_cipher_key_salt))),
+					Auth.session.setId(new Sensitive(decodeBase64(deciphered_payload.session_id))),
+				])
 
+				// Remove sensitive data from memory
 				deciphered_payload.session_token_ciphered = "";
 				deciphered_payload.session_token_cipher_key_salt = "";
 				deciphered_payload.session_id = "";
@@ -235,32 +241,36 @@ self.onmessage = async (event: MessageEvent) => {
 		const captcha_response_numeric = parseInt(captcha_response);
 
 		try {
-			const session_token_ciphered = await retrieveSecret("session_token_ciphered");
-			if (!session_token_ciphered) {
-				throw new Error("Session token ciphered not found in vault");
-			}
-			const session_token_cipher_key_salt = await retrieveSecret("session_token_cipher_key_salt");
-			if (!session_token_cipher_key_salt) {
-				throw new Error("Session token cipher key salt not found in vault");
-			}
-			const session_id = await retrieveSecret("session_id");
-			if (!session_id) {
-				throw new Error("Session ID not found in vault");
+			const [ session_token_ciphered, session_token_cipher_key_salt, session_id ] = await Promise.all([
+				Auth.session.temp.tokenCiphered(),
+				Auth.session.temp.tokenCipherKeySalt(),
+				Auth.session.id()
+			]);
+
+			if (!session_token_ciphered || !session_token_cipher_key_salt || !session_id) {
+				throw new Error("Session token ciphered, key salt, or ID not found in vault");
 			}
 
 			// Decipher Session Token
-			const session_token = await self.CheckoutCaptcha?.(captcha_response_numeric, session_token_ciphered, session_token_cipher_key_salt, session_id);
+			const session_token = await self.CheckoutCaptcha?.(captcha_response_numeric, session_token_ciphered.value!, session_token_cipher_key_salt.value!, session_id.value!);
 			if (typeof session_token !== 'string') {
 				throw new Error("CheckoutCaptcha did not return a valid session token");
 			}
 
+			// Remove sensitive data from memory
+			session_token_ciphered.destroy();
+			session_token_cipher_key_salt.destroy();
+			session_id.destroy();
+
+			Auth.session.temp.clear(); // Clear temporary session data
+
 			console.log(session_token)
 
-			await storeSecret("session_token", decodeBase64(session_token))
+			await Auth.session.setToken(new Sensitive(decodeBase64(session_token)));
 			
 			self.postMessage({ type: 'CheckoutCaptcha', success: true });
 		} catch (err) {
-			console.error('Error retrieving session token ciphered:', err);
+			console.error('Error validating CAPTCHA:', err);
 			self.postMessage({ type: 'CheckoutCaptcha', success: false, error: err });
 			return;
 		} finally {

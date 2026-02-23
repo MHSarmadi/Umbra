@@ -2,6 +2,12 @@
 import { RouterView } from 'vue-router';
 import WorkerPool from './workers/worker-pool?worker';
 import { provide, ref } from 'vue';
+import { useAuth } from './auth';
+
+const Auth = useAuth();
+Auth.session.init().catch(err => {
+	console.error("Failed to initialize auth session:", err);
+});
 
 const workerPool = new WorkerPool();
 const workerRouter = ref<{ [key: string]: (event: MessageEvent) => void }>({});

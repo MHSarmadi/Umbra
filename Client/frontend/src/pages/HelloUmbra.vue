@@ -4,8 +4,12 @@ import { decodeBase64 } from '../tools/base64';
 import HelloIntroPanel from './hello-umbra/components/HelloIntroPanel.vue';
 import SessionInitPanel from './hello-umbra/components/SessionInitPanel.vue';
 import SessionReadyPanel from './hello-umbra/components/SessionReadyPanel.vue';
+import { useAuth } from '../auth';
+import { encodeBase64 } from "../tools/base64";
 
-type PageName = 'HelloUmbra' | 'SessionInit' | 'SessionReady';
+const Auth = useAuth();
+
+type PageName = 'Unspecified' | 'HelloUmbra' | 'SessionInit' | 'SessionReady';
 type CaptchaPanelState = 'form' | 'verified' | 'none';
 
 type WorkerRouterMap = Record<string, (event: MessageEvent) => void>;
@@ -23,7 +27,29 @@ const worker = workerPool;
 const router = workerRouter;
 const progressByType = progressPercentages;
 
-const currentPage = ref<PageName>('HelloUmbra');
+const currentPage = ref<PageName>('Unspecified');
+Auth.session.ready().then(ready => {
+	if (ready) {
+		currentPage.value = 'SessionReady';
+	} else {
+		currentPage.value = 'HelloUmbra';
+	}
+}).catch(err => {
+	console.error("Failed to check auth session readiness:", err);
+	currentPage.value = 'HelloUmbra'; // Fallback to HelloUmbra if auth session check fails
+})
+Promise.all([Auth.session.id(), Auth.session.token()]).then(([id, token]) => {
+	if (id) {
+		console.log('Session ID:', encodeBase64(id.value!));
+	} else {
+		console.warn('No session ID found.');
+	}
+	if (token) {
+		console.log('Session Token:', encodeBase64(token.value!));
+	} else {
+		console.warn('No session token found.');
+	}
+})
 
 // 0: keypair_gen, 1: send_to_server, 2: pow, 3: done
 const currentStep = ref<number | null>(null);
